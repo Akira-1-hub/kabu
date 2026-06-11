@@ -204,6 +204,27 @@ def save_daily_price(d: dict):
     conn.close()
 
 
+def bulk_save_prices(rows: list[dict]):
+    """履歴行の一括保存。avg_volume が None の行は既存値を壊さないよう COALESCE"""
+    if not rows:
+        return 0
+    conn = get_conn()
+    conn.executemany("""
+        INSERT INTO daily_prices
+        (code,date,open,high,low,close,change,change_pct,volume,avg_volume,volume_ratio)
+        VALUES(:code,:date,:open,:high,:low,:close,:change,:change_pct,:volume,:avg_volume,:volume_ratio)
+        ON CONFLICT(code,date) DO UPDATE SET
+          open=excluded.open, high=excluded.high, low=excluded.low,
+          close=excluded.close, change=excluded.change, change_pct=excluded.change_pct,
+          volume=excluded.volume,
+          avg_volume=COALESCE(excluded.avg_volume, daily_prices.avg_volume),
+          volume_ratio=COALESCE(excluded.volume_ratio, daily_prices.volume_ratio)
+    """, rows)
+    conn.commit()
+    conn.close()
+    return len(rows)
+
+
 def get_price_history(code, limit=120):
     conn = get_conn()
     rows = conn.execute(

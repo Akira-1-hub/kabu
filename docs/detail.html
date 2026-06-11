@@ -68,16 +68,24 @@
   </div>
 
   <div class="card">
-    <h2>📈 株価・出来高・空売り残高</h2>
+    <h2>📈 株価・出来高・空売り残高
+      <span style="display:flex;gap:4px">
+        <button class="btn rbtn" data-d="22">1M</button>
+        <button class="btn rbtn" data-d="66">3M</button>
+        <button class="btn rbtn on" data-d="130">6M</button>
+        <button class="btn rbtn" data-d="250">1Y</button>
+        <button class="btn rbtn" data-d="0">全部</button>
+      </span>
+    </h2>
     <div class="body">
-      <canvas id="c-price" height="90"></canvas>
-      <canvas id="c-vol" height="42" style="margin-top:10px"></canvas>
+      <canvas id="c-main" height="110"></canvas>
       <div id="c-short-wrap" style="display:none">
         <div class="muted" style="font-size:11px;margin-top:12px">空売り残高合計（%）</div>
         <canvas id="c-short" height="42"></canvas>
       </div>
     </div>
   </div>
+  <style>.rbtn.on{background:var(--accent);border-color:var(--accent);color:#fff}</style>
 
   <div class="grid2">
     <div class="card">
@@ -154,26 +162,44 @@ fetch(`data/${code}.json`).then(r=>{
     }
   }
 
-  // チャート
+  // チャート（株価＋出来高 統合 / 期間切替）
   const grid={color:'#2a2a4a'}, tick={color:'#8888aa',font:{size:10}};
-  const opts = {responsive:true,plugins:{legend:{display:false}},
-    scales:{x:{grid,ticks:{...tick,maxTicksLimit:8}},y:{grid,ticks:tick,position:'right'}}};
-  if(D.prices.length){
-    new Chart(document.getElementById('c-price'),{type:'line',
-      data:{labels:D.prices.map(p=>p.d),datasets:[{data:D.prices.map(p=>p.c),
-        borderColor:'#00bcd4',backgroundColor:'rgba(0,188,212,.08)',fill:true,tension:.1,pointRadius:0,borderWidth:1.5}]},
-      options:opts});
-    new Chart(document.getElementById('c-vol'),{type:'bar',
-      data:{labels:D.prices.map(p=>p.d),datasets:[{data:D.prices.map(p=>p.v),backgroundColor:'rgba(124,77,255,.5)'}]},
-      options:opts});
-  }
-  if(D.short.series.length){
-    document.getElementById('c-short-wrap').style.display='block';
-    new Chart(document.getElementById('c-short'),{type:'line',
-      data:{labels:D.short.series.map(p=>p.d),datasets:[{data:D.short.series.map(p=>p.r),
-        borderColor:'#ff6b6b',backgroundColor:'rgba(255,107,107,.08)',fill:true,tension:.1,pointRadius:0,borderWidth:1.5}]},
-      options:opts});
-  }
+  let chMain=null, chShort=null;
+  window.renderCharts = function(days){
+    const p = days>0 ? D.prices.slice(-days) : D.prices;
+    if(chMain){chMain.destroy();chMain=null;}
+    if(chShort){chShort.destroy();chShort=null;}
+    if(p.length){
+      const maxVol = Math.max(...p.map(x=>x.v||0));
+      chMain = new Chart(document.getElementById('c-main'),{
+        data:{labels:p.map(x=>x.d),datasets:[
+          {type:'line',label:'終値',data:p.map(x=>x.c),yAxisID:'y',
+           borderColor:'#00bcd4',backgroundColor:'rgba(0,188,212,.06)',fill:true,tension:.1,pointRadius:0,borderWidth:1.6},
+          {type:'bar',label:'出来高',data:p.map(x=>x.v),yAxisID:'y2',backgroundColor:'rgba(124,77,255,.4)'},
+        ]},
+        options:{responsive:true,plugins:{legend:{display:false}},
+          interaction:{mode:'index',intersect:false},
+          scales:{x:{grid,ticks:{...tick,maxTicksLimit:10}},
+                  y:{grid,ticks:tick,position:'right'},
+                  y2:{display:false,suggestedMax:maxVol*3.2}}}
+      });
+    }
+    let s = D.short.series;
+    if(days>0 && p.length){ const cut=p[0].d; s = s.filter(x=>x.d>=cut); }
+    if(s.length){
+      document.getElementById('c-short-wrap').style.display='block';
+      chShort = new Chart(document.getElementById('c-short'),{type:'line',
+        data:{labels:s.map(x=>x.d),datasets:[{data:s.map(x=>x.r),
+          borderColor:'#ff6b6b',backgroundColor:'rgba(255,107,107,.08)',fill:true,tension:.1,pointRadius:0,borderWidth:1.5}]},
+        options:{responsive:true,plugins:{legend:{display:false}},
+          scales:{x:{grid,ticks:{...tick,maxTicksLimit:10}},y:{grid,ticks:tick,position:'right'}}}});
+    }
+  };
+  document.querySelectorAll('.rbtn').forEach(b=>{
+    b.onclick=()=>{document.querySelectorAll('.rbtn').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on'); renderCharts(parseInt(b.dataset.d));};
+  });
+  renderCharts(130);
 
   // 機関別
   document.getElementById('b-inst').innerHTML = D.short.inst.map(r=>`<tr>

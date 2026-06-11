@@ -258,7 +258,7 @@ def api_memo(code):
 
 @app.route('/api/price_history/<code>')
 def api_price_history(code):
-    h = db.get_price_history(code, 120)
+    h = db.get_price_history(code, 600)
     h.reverse()  # 古い順
     return jsonify(h)
 

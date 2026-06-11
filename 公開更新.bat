@@ -11,6 +11,8 @@ echo === gh-pages へ公開中（force push） ===
 cd site
 if exist .git rmdir /s /q .git
 git init -q -b gh-pages
+git config user.name "akino"
+git config user.email "akino@users.noreply.github.com"
 git add -A
 git commit -q -m "publish %date% %time:~0,5%"
 git push -f https://github.com/Akira-1-hub/kabu.git gh-pages

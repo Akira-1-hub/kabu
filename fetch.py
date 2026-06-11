@@ -82,14 +82,49 @@ def fetch_kabutan(code: str, name_hint: str = '') -> dict | None:
         def i(x):
             return None if pd.isna(x) else int(x)
 
+        # 過去テーブル（約30営業日）も履歴として返す＝スキャンのたびに蓄積
+        history = parse_hist_table(code, hist_t) if hist_t is not None else []
+
         return {
             'code': code, 'name': name, 'date': date,
             'open': f(op), 'high': f(hi), 'low': f(lo), 'close': f(close),
             'change': f(chg), 'change_pct': f(pct),
             'volume': i(vol), 'avg_volume': i(avg_vol), 'volume_ratio': f(ratio),
+            'history': history,
         }
     except Exception:
         return None
+
+
+def parse_hist_table(code: str, t: pd.DataFrame) -> list[dict]:
+    """kabutan過去テーブル(日付,始値,高値,安値,終値,前日比,前日比％,売買高)→行リスト"""
+    rows = []
+    for tr in t.itertuples(index=False):
+        d = dict(zip(t.columns, tr))
+
+        def num(col):
+            return pd.to_numeric(str(d.get(col, '')).replace(',', ''), errors='coerce')
+
+        date_raw = str(d.get('日付', '')).strip()
+        if not date_raw or date_raw == 'nan':
+            continue
+        date = parse_date(date_raw)
+
+        def f(x):
+            return None if pd.isna(x) else float(x)
+
+        def i(x):
+            return None if pd.isna(x) else int(x)
+
+        rows.append({
+            'code': code, 'date': date,
+            'open': f(num('始値')), 'high': f(num('高値')), 'low': f(num('安値')),
+            'close': f(num('終値')), 'change': f(num('前日比')),
+            'change_pct': f(num('前日比％')),
+            'volume': i(num('売買高(株)')),
+            'avg_volume': None, 'volume_ratio': None,
+        })
+    return rows
 
 
 def parse_date(raw: str) -> str:
@@ -275,7 +310,10 @@ def scan(
             if d is None:
                 continue
 
-            # DB保存（毎日蓄積）── 全銘柄の生データを保存
+            # DB保存（毎日蓄積）── 履歴30日分＋本日を保存
+            hist = d.pop('history', [])
+            if hist:
+                db.bulk_save_prices(hist)
             db.save_daily_price(d)
 
             # 全件を結果に含める（フロントで後から絞り込む）

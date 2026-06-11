@@ -18,8 +18,8 @@ BASE = os.path.dirname(__file__)
 DOCS = os.path.join(BASE, 'docs')
 SITE = os.path.join(BASE, 'site')
 
-PRICE_DAYS = 90      # 銘柄詳細の株価履歴
-SHORT_POINTS = 120   # 空売り推移の点数
+PRICE_DAYS = 400     # 銘柄詳細の株価履歴（約1.5年）
+SHORT_POINTS = 300   # 空売り推移の点数
 
 
 def jnum(x):

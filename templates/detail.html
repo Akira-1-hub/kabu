@@ -68,16 +68,24 @@
 
 <!-- チャート -->
 <div class="card" style="margin-bottom:14px">
-  <h2>📈 株価・出来高・空売り残高</h2>
+  <h2>📈 株価・出来高（バー）・空売り残高
+    <span id="range-btns" style="display:flex;gap:4px">
+      <button class="btn btn-sm btn-ghost range-btn" data-d="22">1M</button>
+      <button class="btn btn-sm btn-ghost range-btn" data-d="66">3M</button>
+      <button class="btn btn-sm btn-ghost range-btn on" data-d="130">6M</button>
+      <button class="btn btn-sm btn-ghost range-btn" data-d="250">1Y</button>
+      <button class="btn btn-sm btn-ghost range-btn" data-d="0">全部</button>
+    </span>
+  </h2>
   <div class="body">
-    <canvas id="priceChart" height="90"></canvas>
-    <canvas id="volChart" height="40" style="margin-top:10px"></canvas>
+    <canvas id="mainChart" height="110"></canvas>
     <div id="shortChartWrap" style="display:none">
       <div class="muted" style="font-size:11px;margin-top:12px">空売り残高合計（%）</div>
-      <canvas id="shortChart" height="40"></canvas>
+      <canvas id="shortChart" height="42"></canvas>
     </div>
   </div>
 </div>
+<style>.range-btn.on{background:var(--accent);border-color:var(--accent);color:#fff}</style>
 
 <div class="grid grid-2">
   <!-- 条件ヒット履歴 -->
@@ -175,36 +183,69 @@ async function addMemo(){
   document.getElementById('memo-list').innerHTML = r.memos.map(m=>`<div class="memo-item"><div class="date">${m.date}</div>${m.text}</div>`).join('');
 }
 
-// チャート描画
-fetch('/api/price_history/'+CODE).then(r=>r.json()).then(h=>{
-  if(!h.length) return;
-  const labels = h.map(d=>d.date);
-  const closes = h.map(d=>d.close);
-  const vols = h.map(d=>d.volume);
-  const grid = {color:'#2a2a4a'}, tick={color:'#8888aa',font:{size:10}};
-  new Chart(document.getElementById('priceChart'),{
-    type:'line',
-    data:{labels,datasets:[{label:'終値',data:closes,borderColor:'#00bcd4',backgroundColor:'rgba(0,188,212,.08)',fill:true,tension:.1,pointRadius:0,borderWidth:1.5}]},
-    options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{grid,ticks:{...tick,maxTicksLimit:8}},y:{grid,ticks:tick,position:'right'}}}
-  });
-  new Chart(document.getElementById('volChart'),{
-    type:'bar',
-    data:{labels,datasets:[{label:'出来高',data:vols,backgroundColor:'rgba(124,77,255,.5)'}]},
-    options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{grid,ticks:{...tick,maxTicksLimit:8}},y:{grid,ticks:tick,position:'right'}}}
-  });
+// ===== チャート（株価＋出来高 統合 / 期間切替） =====
+let PH = [], SH = [];
+let chMain = null, chShort = null;
+const grid = {color:'#2a2a4a'}, tick = {color:'#8888aa', font:{size:10}};
+
+Promise.all([
+  fetch('/api/price_history/'+CODE).then(r=>r.json()),
+  fetch('/api/short_daily/'+CODE).then(r=>r.json()),
+]).then(([ph, sh])=>{
+  PH = ph; SH = sh;
+  renderCharts(130);  // 初期=6M
 });
 
-// 空売り残高チャート
-fetch('/api/short_daily/'+CODE).then(r=>r.json()).then(s=>{
-  if(!s.length) return;
-  document.getElementById('shortChartWrap').style.display='block';
-  const grid={color:'#2a2a4a'}, tick={color:'#8888aa',font:{size:10}};
-  new Chart(document.getElementById('shortChart'),{
-    type:'line',
-    data:{labels:s.map(d=>d.date),datasets:[{label:'空売り残高%',data:s.map(d=>d.total_ratio),
-      borderColor:'#ff6b6b',backgroundColor:'rgba(255,107,107,.08)',fill:true,tension:.1,pointRadius:0,borderWidth:1.5}]},
-    options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{grid,ticks:{...tick,maxTicksLimit:8}},y:{grid,ticks:tick,position:'right'}}}
-  });
+function renderCharts(days){
+  const p = days>0 ? PH.slice(-days) : PH;
+  if(chMain){ chMain.destroy(); chMain=null; }
+  if(chShort){ chShort.destroy(); chShort=null; }
+  if(p.length){
+    const maxVol = Math.max(...p.map(d=>d.volume||0));
+    chMain = new Chart(document.getElementById('mainChart'),{
+      data:{
+        labels: p.map(d=>d.date),
+        datasets:[
+          {type:'line', label:'終値', data:p.map(d=>d.close), yAxisID:'y',
+           borderColor:'#00bcd4', backgroundColor:'rgba(0,188,212,.06)', fill:true,
+           tension:.1, pointRadius:0, borderWidth:1.6},
+          {type:'bar', label:'出来高', data:p.map(d=>d.volume), yAxisID:'y2',
+           backgroundColor:'rgba(124,77,255,.4)'},
+        ]
+      },
+      options:{responsive:true, plugins:{legend:{display:false}},
+        interaction:{mode:'index', intersect:false},
+        scales:{
+          x:{grid, ticks:{...tick, maxTicksLimit:10}},
+          y:{grid, ticks:tick, position:'right'},
+          y2:{display:false, suggestedMax: maxVol*3.2},  // 出来高は下1/3に表示
+        }}
+    });
+  }
+  // 空売りは株価表示期間と同じ開始日に揃える（全部のときは全期間）
+  let s = SH;
+  if(days>0 && p.length){
+    const cutoff = p[0].date;
+    s = SH.filter(d=>d.date >= cutoff);
+  }
+  if(s.length){
+    document.getElementById('shortChartWrap').style.display='block';
+    chShort = new Chart(document.getElementById('shortChart'),{
+      type:'line',
+      data:{labels:s.map(d=>d.date),datasets:[{data:s.map(d=>d.total_ratio),
+        borderColor:'#ff6b6b',backgroundColor:'rgba(255,107,107,.08)',fill:true,tension:.1,pointRadius:0,borderWidth:1.5}]},
+      options:{responsive:true,plugins:{legend:{display:false}},
+        scales:{x:{grid,ticks:{...tick,maxTicksLimit:10}},y:{grid,ticks:tick,position:'right'}}}
+    });
+  }
+}
+
+document.querySelectorAll('.range-btn').forEach(b=>{
+  b.onclick = ()=>{
+    document.querySelectorAll('.range-btn').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    renderCharts(parseInt(b.dataset.d));
+  };
 });
 </script>
 {% endblock %}
