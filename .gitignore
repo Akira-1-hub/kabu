@@ -13,3 +13,8 @@ _*.py
 
 # Claude設定
 .claude/
+
+# 公開サイト生成物（gh-pagesへ別途push）
+site/
+docs/data.json
+

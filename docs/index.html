@@ -60,6 +60,9 @@
 
   <!-- スクリーニング -->
   <div class="panel on" id="p-screen">
+    <div class="filters" id="stats" style="gap:8px 22px">
+      <span class="muted">読み込み中...</span>
+    </div>
     <div class="filters">
       <label>前日比±</label><input type="number" id="f-pct" value="3" step="0.5" oninput="renderScreen()">
       <label>%以上</label>
@@ -128,12 +131,20 @@ let sKey='pct', sDesc=true;
 const fmtN = n => n==null?'-':Number(n).toLocaleString();
 const fmtP = n => n==null?'-':(n>=0?'+':'')+Number(n).toFixed(2)+'%';
 const cls  = n => n==null?'':(n>0?'rise':(n<0?'fall':''));
-const kab  = c => `https://kabutan.jp/stock/?code=${c}`;
-const lk   = (c,t) => `<a href="${kab(c)}" target="_blank" style="color:inherit">${t}</a>`;
+const lk   = (c,t) => `<a href="detail.html?code=${c}" style="color:inherit">${t}</a>`;
 
 fetch('data.json').then(r=>r.json()).then(d=>{
   D = d;
   document.getElementById('updated').textContent = '更新: ' + d.updated;
+  const up3 = d.prices.filter(p=>(p.pct||0)>=3).length;
+  const dn3 = d.prices.filter(p=>(p.pct||0)<=-3).length;
+  const v2  = d.prices.filter(p=>(p.ratio||0)>=2).length;
+  document.getElementById('stats').innerHTML = `
+    <span><span class="muted">収集</span> <b>${d.prices.length.toLocaleString()}</b>銘柄</span>
+    <span><span class="muted">+3%↑</span> <b class="rise">${up3}</b></span>
+    <span><span class="muted">-3%↓</span> <b class="fall">${dn3}</b></span>
+    <span><span class="muted">出来高2x↑</span> <b class="both">${v2}</b></span>
+    <span><span class="muted">空売り最新</span> <b>${d.short.latest||'-'}</b></span>`;
   renderScreen(); renderShort(); renderHits();
 }).catch(e=>{
   document.getElementById('updated').textContent = 'data.json が読めません';
