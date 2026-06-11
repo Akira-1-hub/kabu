@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}銘柄一覧 - 投資DB{% endblock %}
+{% block content %}
+
+<div class="page-title">📋 銘柄一覧 <span class="muted" style="font-size:13px;font-weight:400">（スキャンで取得した最新データ）</span></div>
+
+<div class="scan-panel">
+  <div class="fld"><label>絞込</label><input type="text" id="filter" placeholder="コード/銘柄名" oninput="render()" style="width:160px"></div>
+  <div class="fld"><label>前日比</label><input type="number" id="f-pct" placeholder="±%以上" oninput="render()" style="width:80px"></div>
+  <div class="fld"><label>出来高倍率</label><input type="number" id="f-surge" placeholder="倍以上" oninput="render()" style="width:80px"></div>
+  <span class="spacer" style="flex:1"></span>
+  <span class="muted" id="count" style="font-size:12px"></span>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th class="txt-left" onclick="sortBy('code')">コード</th>
+        <th class="txt-left" onclick="sortBy('name')">銘柄名</th>
+        <th onclick="sortBy('close')">終値</th>
+        <th onclick="sortBy('change')">前日比</th>
+        <th onclick="sortBy('change_pct')">前日比%</th>
+        <th class="hide-sp" onclick="sortBy('volume')">出来高</th>
+        <th onclick="sortBy('volume_ratio')">倍率</th>
+        <th class="hide-sp" onclick="sortBy('date')">日付</th>
+      </tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+{% block script %}
+<script>
+const DATA = {{ prices|tojson }};
+const NAMES = {{ name_map|tojson }};
+let sortKey='change_pct', sortDesc=true;
+
+function nameOf(d){ return d.name || NAMES[d.code] || ''; }
+
+function render(){
+  const ft = document.getElementById('filter').value.trim();
+  const fpct = parseFloat(document.getElementById('f-pct').value);
+  const fsurge = parseFloat(document.getElementById('f-surge').value);
+  let rows = DATA.filter(d=>{
+    if(ft && !(d.code.includes(ft) || nameOf(d).includes(ft))) return false;
+    if(!isNaN(fpct) && Math.abs(d.change_pct||0) < fpct) return false;
+    if(!isNaN(fsurge) && (d.volume_ratio||0) < fsurge) return false;
+    return true;
+  });
+  rows.sort((a,b)=>{
+    let av=a[sortKey], bv=b[sortKey];
+    if(sortKey==='name'){ av=nameOf(a); bv=nameOf(b); }
+    if(typeof av==='string'){ return sortDesc? bv.localeCompare(av):av.localeCompare(bv); }
+    av=av==null?-1e18:av; bv=bv==null?-1e18:bv;
+    return sortDesc ? bv-av : av-bv;
+  });
+  document.getElementById('count').textContent = `${rows.length}件`;
+  const body = document.getElementById('tbody');
+  if(!rows.length){ body.innerHTML='<tr><td colspan="8" class="empty">データがありません。ダッシュボードでスキャンしてください</td></tr>'; return; }
+  body.innerHTML = rows.slice(0,500).map(d=>`
+    <tr>
+      <td class="txt-left code"><a href="/stock/${d.code}">${d.code}</a></td>
+      <td class="txt-left"><a href="/stock/${d.code}" style="color:inherit">${nameOf(d)}</a></td>
+      <td>${fmtNum(d.close)}</td>
+      <td class="${pctClass(d.change)}">${d.change!=null?(d.change>=0?'+':'')+d.change:'-'}</td>
+      <td class="${pctClass(d.change_pct)}">${fmtPct(d.change_pct)}</td>
+      <td class="hide-sp">${fmtNum(d.volume)}</td>
+      <td>${d.volume_ratio!=null?d.volume_ratio.toFixed(1)+'x':'-'}</td>
+      <td class="hide-sp muted">${d.date||'-'}</td>
+    </tr>`).join('');
+}
+function sortBy(k){ if(sortKey===k) sortDesc=!sortDesc; else {sortKey=k;sortDesc=true;} render(); }
+render();
+</script>
+{% endblock %}

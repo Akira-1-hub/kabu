@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}ウォッチリスト - 投資DB{% endblock %}
+{% block content %}
+
+<div class="page-title">⭐ ウォッチリスト
+  <span class="spacer" style="flex:1"></span>
+  <a class="btn btn-sm btn-ghost" href="/export/watchlist">CSV出力</a>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th class="txt-left">コード</th><th class="txt-left">銘柄名</th>
+        <th>終値</th><th>前日比%</th><th class="hide-sp">倍率</th>
+        <th class="hide-sp">登録日</th><th class="txt-left">メモ</th><th></th>
+      </tr></thead>
+      <tbody>
+        {% for w in watchlist %}
+        <tr>
+          <td class="txt-left code"><a href="/stock/{{ w.code }}">{{ w.code }}</a></td>
+          <td class="txt-left"><a href="/stock/{{ w.code }}" style="color:inherit">{{ w.name or '-' }}</a></td>
+          <td>{% if w.price and w.price.close %}{{ '{:,.0f}'.format(w.price.close) }}{% else %}-{% endif %}</td>
+          <td class="{% if w.price and w.price.change_pct and w.price.change_pct>0 %}rise{% elif w.price and w.price.change_pct and w.price.change_pct<0 %}fall{% endif %}">
+            {% if w.price and w.price.change_pct is not none %}{{ '{:+.2f}%'.format(w.price.change_pct) }}{% else %}-{% endif %}</td>
+          <td class="hide-sp">{% if w.price and w.price.volume_ratio %}{{ '{:.1f}x'.format(w.price.volume_ratio) }}{% else %}-{% endif %}</td>
+          <td class="hide-sp muted">{{ w.added_date }}</td>
+          <td class="txt-left muted">{{ w.memo or '' }}</td>
+          <td><button class="btn btn-sm btn-ghost" onclick="unwatch('{{ w.code }}',this)">削除</button></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="empty">ウォッチ銘柄がありません。銘柄詳細ページの ⭐ ボタンで登録できます。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+{% block script %}
+<script>
+async function unwatch(code, el){
+  await fetch('/api/watch/'+code,{method:'POST'});
+  el.closest('tr').remove();
+}
+</script>
+{% endblock %}

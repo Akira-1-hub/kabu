@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}投資DB{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{% block head %}{% endblock %}
+</head>
+<body>
+<nav>
+  <span class="brand">📈 投資DB</span>
+  <a class="tab {% if request.path=='/' %}active{% endif %}" href="/">ダッシュボード</a>
+  <a class="tab {% if request.path=='/stocks' %}active{% endif %}" href="/stocks">銘柄一覧</a>
+  <a class="tab {% if request.path=='/rankings' %}active{% endif %}" href="/rankings">ランキング</a>
+  <a class="tab {% if request.path=='/short' %}active{% endif %}" href="/short">空売り</a>
+  <a class="tab {% if request.path=='/watchlist' %}active{% endif %}" href="/watchlist">ウォッチ</a>
+  <span class="spacer"></span>
+  <form class="search" onsubmit="return goStock(event)">
+    <input type="text" id="search-code" placeholder="銘柄コード" inputmode="numeric">
+    <button class="btn btn-sm btn-ghost" type="submit">検索</button>
+  </form>
+</nav>
+
+<div class="container">
+{% block content %}{% endblock %}
+</div>
+
+<script>
+function goStock(e){
+  e.preventDefault();
+  const c = document.getElementById('search-code').value.trim();
+  if(c) location.href = '/stock/' + c;
+  return false;
+}
+function fmtNum(n){ return n==null ? '-' : Number(n).toLocaleString(); }
+function fmtPct(n){ return n==null ? '-' : (n>=0?'+':'') + Number(n).toFixed(2) + '%'; }
+function pctClass(n){ return n==null ? '' : (n>0?'rise':(n<0?'fall':'')); }
+</script>
+{% block script %}{% endblock %}
+</body>
+</html>

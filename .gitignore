@@ -1,0 +1,15 @@
+# データベース（再生成可能・サイズ大）
+stocks.db
+stocks.db-wal
+stocks.db-shm
+
+# 一時ファイル・出力
+__pycache__/
+*.pyc
+*.png
+*.xlsx
+*.xls
+_*.py
+
+# Claude設定
+.claude/

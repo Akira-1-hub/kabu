@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block title %}{{ stock.code }} {{ stock.name }} - 投資DB{% endblock %}
+{% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>{% endblock %}
+{% block content %}
+
+{% set latest = history[0] if history else None %}
+
+<div class="page-title">
+  <span>{{ stock.code }} {{ stock.name }}</span>
+  <button class="btn-star {% if watched %}on{% endif %}" id="watch-btn" onclick="toggleWatch()">{% if watched %}★{% else %}☆{% endif %}</button>
+  <span class="spacer" style="flex:1"></span>
+  <a class="btn btn-sm btn-ghost" href="/export/stock/{{ stock.code }}">CSV出力</a>
+  <a class="btn btn-sm btn-ghost" href="https://kabutan.jp/stock/?code={{ stock.code }}" target="_blank">kabutan↗</a>
+</div>
+
+<!-- 価格ヘッダ -->
+<div class="card" style="margin-bottom:14px"><div class="body">
+  {% if latest %}
+  <div class="detail-head">
+    <span class="price {{ 'rise' if (latest.change_pct or 0)>0 else 'fall' if (latest.change_pct or 0)<0 else '' }}">
+      {{ '{:,.0f}'.format(latest.close) if latest.close else '-' }}
+    </span>
+    <span class="{{ 'rise' if (latest.change or 0)>0 else 'fall' if (latest.change or 0)<0 else '' }}" style="font-size:16px">
+      {{ '{:+,.0f}'.format(latest.change) if latest.change is not none else '' }}
+      ({{ '{:+.2f}%'.format(latest.change_pct) if latest.change_pct is not none else '' }})
+    </span>
+    <span class="muted">{{ latest.date }}</span>
+  </div>
+  <div class="kv" style="margin-top:12px">
+    <span class="k">始値</span><span>{{ '{:,.0f}'.format(latest.open) if latest.open else '-' }}</span>
+    <span class="k">高値</span><span>{{ '{:,.0f}'.format(latest.high) if latest.high else '-' }}</span>
+    <span class="k">安値</span><span>{{ '{:,.0f}'.format(latest.low) if latest.low else '-' }}</span>
+    <span class="k">出来高</span><span>{{ '{:,.0f}'.format(latest.volume) if latest.volume else '-' }}</span>
+    <span class="k">25日平均</span><span>{{ '{:,.0f}'.format(latest.avg_volume) if latest.avg_volume else '-' }}</span>
+    <span class="k">出来高倍率</span><span>{{ '{:.1f}x'.format(latest.volume_ratio) if latest.volume_ratio else '-' }}</span>
+  </div>
+  {% else %}
+  <div class="empty">株価データがありません。ダッシュボードでスキャンすると蓄積されます。</div>
+  {% endif %}
+</div></div>
+
+<!-- 企業情報 -->
+<div class="card" style="margin-bottom:14px">
+  <h2>🏢 企業情報
+    {% if fund and fund.updated %}<span class="muted">取得 {{ fund.updated }}</span>{% endif %}
+  </h2>
+  <div class="body">
+    <div style="display:flex;gap:10px 28px;flex-wrap:wrap;margin-bottom:10px">
+      <div><span class="muted">市場</span>　<b>{{ stock.market or '-' }}</b></div>
+      <div><span class="muted">業種</span>　<b>{{ stock.sector or '-' }}</b></div>
+      <div><span class="muted">時価総額</span>　<b>
+        {%- if fund and fund.market_cap_oku -%}
+          {%- if fund.market_cap_oku >= 10000 -%}{{ '{:.2f}兆円'.format(fund.market_cap_oku/10000) }}
+          {%- else -%}{{ '{:,.0f}億円'.format(fund.market_cap_oku) }}{%- endif -%}
+        {%- else -%}-{%- endif -%}</b></div>
+      <div><span class="muted">予想PER</span>　<b>{{ '{:.1f}倍'.format(fund.per) if fund and fund.per else '-' }}</b></div>
+      <div><span class="muted">PBR</span>　<b>{{ '{:.2f}倍'.format(fund.pbr) if fund and fund.pbr else '-' }}</b></div>
+      <div><span class="muted">予想EPS</span>　<b>{{ '{:.1f}円'.format(fund.eps) if fund and fund.eps is not none else '-' }}</b></div>
+      <div><span class="muted">利回り</span>　<b>{{ '{:.2f}%'.format(fund.dividend_yield) if fund and fund.dividend_yield else '-' }}</b></div>
+    </div>
+    {% if fund and fund.description %}
+    <div style="font-size:12.5px;line-height:1.7;color:#bbbbd5;border-top:1px solid var(--border);padding-top:8px">
+      {{ fund.description }}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- チャート -->
+<div class="card" style="margin-bottom:14px">
+  <h2>📈 株価・出来高・空売り残高</h2>
+  <div class="body">
+    <canvas id="priceChart" height="90"></canvas>
+    <canvas id="volChart" height="40" style="margin-top:10px"></canvas>
+    <div id="shortChartWrap" style="display:none">
+      <div class="muted" style="font-size:11px;margin-top:12px">空売り残高合計（%）</div>
+      <canvas id="shortChart" height="40"></canvas>
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <!-- 条件ヒット履歴 -->
+  <div class="card">
+    <h2>🎯 条件ヒット履歴</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th class="txt-left">日付</th><th class="txt-left">条件</th><th>値</th></tr></thead>
+        <tbody>
+          {% for h in hits %}
+          <tr><td class="txt-left muted">{{ h.date }}</td><td class="txt-left">{{ h.condition }}</td><td>{{ h.detail }}</td></tr>
+          {% else %}<tr><td colspan="3" class="empty">まだ記録がありません</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 空売り残高（機関別・最新日） -->
+  <div class="card">
+    <h2>📉 空売り残高（最新日 機関別）
+      {% if shorts_latest %}<span class="muted">{{ shorts_latest[0].date }}</span>{% endif %}
+    </h2>
+    <div class="table-wrap" style="max-height:320px;overflow-y:auto">
+      <table>
+        <thead><tr><th class="txt-left">機関</th><th>残高%</th><th class="hide-sp">残高株数</th><th>増減</th></tr></thead>
+        <tbody>
+          {% for s in shorts_latest %}
+          <tr>
+            <td class="txt-left">{{ s.institution }}</td>
+            <td>{{ '{:.2f}%'.format(s.ratio) if s.ratio is not none else '-' }}</td>
+            <td class="hide-sp">{{ '{:,.0f}'.format(s.shares) if s.shares else '-' }}</td>
+            <td class="{{ 'rise' if (s.change_shares or 0)>0 else 'fall' if (s.change_shares or 0)<0 else '' }}">
+              {{ '{:+,.0f}'.format(s.change_shares) if s.change_shares is not none else '-' }}</td>
+          </tr>
+          {% else %}<tr><td colspan="4" class="empty">この銘柄の空売り報告はありません（残高0.5%未満）</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- メモ -->
+<div class="card" style="margin-top:14px">
+  <h2>📝 メモ</h2>
+  <div class="body">
+    <textarea id="memo-text" rows="2" placeholder="この銘柄についてのメモ..."></textarea>
+    <button class="btn btn-sm btn-accent" style="margin-top:6px" onclick="addMemo()">メモを追加</button>
+    <div id="memo-list" style="margin-top:10px">
+      {% for m in memos %}
+      <div class="memo-item"><div class="date">{{ m.date }}</div>{{ m.text }}</div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<!-- 株価履歴テーブル -->
+<div class="card" style="margin-top:14px">
+  <h2>📅 株価履歴</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th class="txt-left">日付</th><th>始値</th><th>高値</th><th>安値</th><th>終値</th><th>前日比%</th><th class="hide-sp">出来高</th></tr></thead>
+      <tbody>
+        {% for h in history %}
+        <tr>
+          <td class="txt-left muted">{{ h.date }}</td>
+          <td>{{ '{:,.0f}'.format(h.open) if h.open else '-' }}</td>
+          <td>{{ '{:,.0f}'.format(h.high) if h.high else '-' }}</td>
+          <td>{{ '{:,.0f}'.format(h.low) if h.low else '-' }}</td>
+          <td>{{ '{:,.0f}'.format(h.close) if h.close else '-' }}</td>
+          <td class="{{ 'rise' if (h.change_pct or 0)>0 else 'fall' if (h.change_pct or 0)<0 else '' }}">
+            {{ '{:+.2f}%'.format(h.change_pct) if h.change_pct is not none else '-' }}</td>
+          <td class="hide-sp">{{ '{:,.0f}'.format(h.volume) if h.volume else '-' }}</td>
+        </tr>
+        {% else %}<tr><td colspan="7" class="empty">履歴がありません</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+{% block script %}
+<script>
+const CODE = '{{ stock.code }}';
+
+async function toggleWatch(){
+  const r = await (await fetch('/api/watch/'+CODE,{method:'POST'})).json();
+  const b = document.getElementById('watch-btn');
+  b.textContent = r.watched?'★':'☆'; b.classList.toggle('on', r.watched);
+}
+async function addMemo(){
+  const t = document.getElementById('memo-text');
+  if(!t.value.trim()) return;
+  const r = await (await fetch('/api/memo/'+CODE,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t.value})})).json();
+  t.value='';
+  document.getElementById('memo-list').innerHTML = r.memos.map(m=>`<div class="memo-item"><div class="date">${m.date}</div>${m.text}</div>`).join('');
+}
+
+// チャート描画
+fetch('/api/price_history/'+CODE).then(r=>r.json()).then(h=>{
+  if(!h.length) return;
+  const labels = h.map(d=>d.date);
+  const closes = h.map(d=>d.close);
+  const vols = h.map(d=>d.volume);
+  const grid = {color:'#2a2a4a'}, tick={color:'#8888aa',font:{size:10}};
+  new Chart(document.getElementById('priceChart'),{
+    type:'line',
+    data:{labels,datasets:[{label:'終値',data:closes,borderColor:'#00bcd4',backgroundColor:'rgba(0,188,212,.08)',fill:true,tension:.1,pointRadius:0,borderWidth:1.5}]},
+    options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{grid,ticks:{...tick,maxTicksLimit:8}},y:{grid,ticks:tick,position:'right'}}}
+  });
+  new Chart(document.getElementById('volChart'),{
+    type:'bar',
+    data:{labels,datasets:[{label:'出来高',data:vols,backgroundColor:'rgba(124,77,255,.5)'}]},
+    options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{grid,ticks:{...tick,maxTicksLimit:8}},y:{grid,ticks:tick,position:'right'}}}
+  });
+});
+
+// 空売り残高チャート
+fetch('/api/short_daily/'+CODE).then(r=>r.json()).then(s=>{
+  if(!s.length) return;
+  document.getElementById('shortChartWrap').style.display='block';
+  const grid={color:'#2a2a4a'}, tick={color:'#8888aa',font:{size:10}};
+  new Chart(document.getElementById('shortChart'),{
+    type:'line',
+    data:{labels:s.map(d=>d.date),datasets:[{label:'空売り残高%',data:s.map(d=>d.total_ratio),
+      borderColor:'#ff6b6b',backgroundColor:'rgba(255,107,107,.08)',fill:true,tension:.1,pointRadius:0,borderWidth:1.5}]},
+    options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{grid,ticks:{...tick,maxTicksLimit:8}},y:{grid,ticks:tick,position:'right'}}}
+  });
+});
+</script>
+{% endblock %}

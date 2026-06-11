@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% block title %}ダッシュボード - 投資DB{% endblock %}
+{% block content %}
+
+<div class="page-title">📊 ダッシュボード</div>
+
+<!-- ① データ収集パネル -->
+<div class="scan-panel">
+  <span class="badge accent">① 収集</span>
+  <div class="fld"><label>対象</label>
+    <select id="scope">
+      <option value="all">全銘柄(約3500)</option>
+      <option value="nikkei225">日経225</option>
+      <option value="watchlist">ウォッチのみ</option>
+    </select>
+  </div>
+  <div class="fld"><label>並列</label><input type="number" id="workers" value="20" min="1" max="20" style="width:48px"></div>
+  <button class="btn btn-green" id="btn-scan" onclick="startScan()">▶ スキャン開始（全銘柄取得）</button>
+  <div class="progress-wrap"><div class="progress-bar" id="pbar"></div></div>
+  <span class="muted" id="pcount" style="font-size:12px"></span>
+</div>
+<div class="status-line" id="status">待機中</div>
+
+<!-- ② スクリーニング（収集済みデータを絞り込み・再スキャン不要） -->
+<div class="scan-panel" style="margin-top:10px">
+  <span class="badge accent">② 絞り込み</span>
+  <div class="fld"><label>前日比±</label><input type="number" id="min_pct" value="3" step="0.5" min="0" oninput="renderScan()"><label>%以上</label></div>
+  <div class="fld"><label>出来高</label><input type="number" id="surge" value="2" step="0.5" min="0" oninput="renderScan()"><label>倍以上</label></div>
+  <div class="fld">
+    <select id="mode" onchange="renderScan()"><option value="both">両条件一致</option><option value="any">どちらか</option><option value="none">条件なし(全件)</option></select>
+  </div>
+  <div class="fld"><input type="text" id="kw" placeholder="コード/銘柄名" oninput="renderScan()" style="width:140px"></div>
+  <span class="spacer" style="flex:1"></span>
+  <span class="muted" id="filter-count" style="font-size:12px"></span>
+</div>
+
+<!-- 統計 -->
+<div class="grid grid-3" style="margin:14px 0">
+  <div class="stat"><div class="num" id="stat-hits">{{ today_hits|length }}</div><div class="lbl">本日の条件ヒット</div></div>
+  <div class="stat"><div class="num">{{ watchlist|length }}</div><div class="lbl">ウォッチ銘柄</div></div>
+  <div class="stat"><div class="num">{{ hit_ranking|length }}</div><div class="lbl">継続出現銘柄(30日)</div></div>
+</div>
+
+<!-- 空売りデータ -->
+<div class="card" style="margin-bottom:14px">
+  <h2>📉 空売り残高データ（JPX）
+    <button class="btn btn-sm btn-accent" id="btn-short" onclick="updateShort()">⬇ 最新を取得して追加</button>
+  </h2>
+  <div class="body">
+    <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center">
+      <div><span class="muted">累計</span> <b id="sh-total">-</b> 件</div>
+      <div><span class="muted">銘柄数</span> <b id="sh-codes">-</b></div>
+      <div><span class="muted">日数</span> <b id="sh-days">-</b></div>
+      <div><span class="muted">最新計算日</span> <b id="sh-date">-</b></div>
+      <span class="muted" id="sh-status" style="font-size:12px"></span>
+    </div>
+  </div>
+</div>
+
+<!-- スキャン結果（ライブ） -->
+<div class="card" style="margin-bottom:14px">
+  <h2>スクリーニング結果（②の条件で絞り込み）<span><a href="/export/scan" class="btn btn-sm btn-ghost">CSV出力</a></span></h2>
+  <div class="table-wrap">
+    <table id="scan-table">
+      <thead><tr>
+        <th class="txt-left" onclick="sortScan('code')">コード</th>
+        <th class="txt-left" onclick="sortScan('name')">銘柄名</th>
+        <th onclick="sortScan('close')">終値</th>
+        <th onclick="sortScan('change_pct')">前日比%</th>
+        <th class="hide-sp" onclick="sortScan('volume')">出来高</th>
+        <th onclick="sortScan('volume_ratio')">倍率</th>
+        <th>条件</th>
+        <th></th>
+      </tr></thead>
+      <tbody id="scan-body">
+        <tr><td colspan="8" class="empty">▶ スキャン開始 を押してください</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <!-- 継続出現ランキング -->
+  <div class="card">
+    <h2>🔁 継続出現ランキング（直近30日）</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>出現回数</th><th class="hide-sp">最終</th></tr></thead>
+        <tbody>
+          {% for r in hit_ranking %}
+          <tr>
+            <td class="txt-left code"><a href="/stock/{{ r.code }}">{{ r.code }}</a></td>
+            <td class="txt-left"><a href="/stock/{{ r.code }}" style="color:inherit">{{ r.name or '-' }}</a></td>
+            <td><span class="badge accent">{{ r.hit_count }}回</span></td>
+            <td class="hide-sp muted">{{ r.last_date }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="empty">スキャンするとデータが溜まります</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ウォッチ -->
+  <div class="card">
+    <h2>⭐ ウォッチリスト <span><a href="/watchlist">すべて表示</a></span></h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th class="hide-sp">登録日</th></tr></thead>
+        <tbody>
+          {% for w in watchlist[:10] %}
+          <tr>
+            <td class="txt-left code"><a href="/stock/{{ w.code }}">{{ w.code }}</a></td>
+            <td class="txt-left"><a href="/stock/{{ w.code }}" style="color:inherit">{{ w.name or '-' }}</a></td>
+            <td class="hide-sp muted">{{ w.added_date }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="empty">銘柄詳細ページの ⭐ で登録できます</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block script %}
+<script>
+let scanResults = [];
+let sortKey = 'change_pct', sortDesc = true;
+let pollTimer = null;
+
+async function startScan(){
+  const body = {
+    scope: document.getElementById('scope').value,
+    min_pct: document.getElementById('min_pct').value,
+    surge: document.getElementById('surge').value,
+    workers: document.getElementById('workers').value,
+    mode: document.getElementById('mode').value,
+  };
+  const res = await (await fetch('/api/scan/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  if(!res.ok){ alert(res.msg); return; }
+  document.getElementById('btn-scan').textContent = '⏳ 取得中';
+  if(pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(poll, 1500);
+  poll();
+  loadShortStatus();  // 空売り更新も同時に走るのでカードも更新
+}
+
+async function poll(){
+  try{
+    const st = await (await fetch('/api/scan/status')).json();
+    const results = await (await fetch('/api/scan/results')).json();
+    document.getElementById('status').textContent = st.status + (st.running ? '' : `（取得 ${results.length}銘柄）`);
+    const pct = st.total>0 ? (st.progress/st.total*100) : 0;
+    document.getElementById('pbar').style.width = pct + '%';
+    document.getElementById('pcount').textContent = st.total>0 ? `${st.progress}/${st.total}` : '';
+    scanResults = results;
+    renderScan();
+    if(!st.running){
+      clearInterval(pollTimer); pollTimer=null;
+      document.getElementById('btn-scan').textContent = '▶ スキャン開始（全銘柄取得）';
+    }
+  }catch(e){}
+}
+
+// 収集済み全データを「絞り込み条件」でフィルタして表示（再スキャン不要）
+function renderScan(){
+  const body = document.getElementById('scan-body');
+  const minPct = parseFloat(document.getElementById('min_pct').value);
+  const surge  = parseFloat(document.getElementById('surge').value);
+  const mode   = document.getElementById('mode').value;
+  const kw     = document.getElementById('kw').value.trim();
+
+  let rows = scanResults.filter(d=>{
+    if(kw && !((d.code||'').includes(kw) || (d.name||'').includes(kw))) return false;
+    const hitPct   = Math.abs(d.change_pct||0) >= (isNaN(minPct)?0:minPct);
+    const hitSurge = (d.volume_ratio||0)       >= (isNaN(surge)?0:surge);
+    if(mode==='both') return hitPct && hitSurge;
+    if(mode==='any')  return hitPct || hitSurge;
+    return true; // none = 全件
+  });
+
+  document.getElementById('filter-count').textContent =
+    scanResults.length ? `${rows.length}件 / 収集${scanResults.length}件` : '';
+  document.getElementById('stat-hits').textContent = rows.length;
+
+  if(!scanResults.length){
+    body.innerHTML = '<tr><td colspan="8" class="empty">▶ スキャン開始 で全銘柄データを取得してください</td></tr>';
+    return;
+  }
+  if(!rows.length){
+    body.innerHTML = '<tr><td colspan="8" class="empty">この条件に一致する銘柄はありません（条件を緩めてください）</td></tr>';
+    return;
+  }
+
+  rows.sort((a,b)=>{
+    let av=a[sortKey], bv=b[sortKey];
+    if(typeof av==='string'){ return sortDesc ? (bv||'').localeCompare(av):(av||'').localeCompare(bv); }
+    av=av||0; bv=bv||0;
+    return sortDesc ? bv-av : av-bv;
+  });
+
+  body.innerHTML = rows.slice(0,500).map(d=>{
+    const hitPct   = Math.abs(d.change_pct||0) >= (isNaN(minPct)?0:minPct);
+    const hitSurge = (d.volume_ratio||0)       >= (isNaN(surge)?0:surge);
+    const tag = (hitPct&&hitSurge)?'both':(hitPct?(d.change_pct>0?'rise':'fall'):(hitSurge?'accent':''));
+    const conds = [];
+    if(hitPct)   conds.push(`前日比${d.change_pct>=0?'+':''}${(d.change_pct||0).toFixed(1)}%`);
+    if(hitSurge) conds.push(`出来高${(d.volume_ratio||0).toFixed(1)}x`);
+    return `
+    <tr>
+      <td class="txt-left code"><a href="/stock/${d.code}">${d.code}</a></td>
+      <td class="txt-left ${tag}"><a href="/stock/${d.code}" style="color:inherit">${d.name||'-'}</a></td>
+      <td>${fmtNum(d.close)}</td>
+      <td class="${pctClass(d.change_pct)}">${fmtPct(d.change_pct)}</td>
+      <td class="hide-sp">${fmtNum(d.volume)}</td>
+      <td>${d.volume_ratio!=null?d.volume_ratio.toFixed(1)+'x':'-'}</td>
+      <td>${conds.length?`<span class="badge ${tag}">${conds.join(' / ')}</span>`:'-'}</td>
+      <td><button class="btn-star btn-sm" onclick="toggleWatch('${d.code}',this)">☆</button></td>
+    </tr>`;}).join('');
+}
+
+function sortScan(k){ if(sortKey===k) sortDesc=!sortDesc; else {sortKey=k;sortDesc=true;} renderScan(); }
+
+async function toggleWatch(code, el){
+  const r = await (await fetch('/api/watch/'+code,{method:'POST'})).json();
+  el.textContent = r.watched ? '★' : '☆';
+  el.classList.toggle('on', r.watched);
+}
+
+// 空売りデータ状態
+async function loadShortStatus(){
+  try{
+    const s = await (await fetch('/api/short/update_status')).json();
+    document.getElementById('sh-total').textContent = s.total.toLocaleString();
+    document.getElementById('sh-codes').textContent = s.codes.toLocaleString();
+    document.getElementById('sh-days').textContent = s.days.toLocaleString();
+    document.getElementById('sh-date').textContent = s.max_date || '-';
+    if(s.running){
+      document.getElementById('sh-status').textContent = '取得中... ' + (s.log[s.log.length-1]||'');
+      document.getElementById('btn-short').textContent = '⏳ 取得中';
+      setTimeout(loadShortStatus, 1500);
+    } else {
+      document.getElementById('btn-short').textContent = '⬇ 最新を取得して追加';
+      if(s.added>0) document.getElementById('sh-status').textContent = `${s.added}件追加しました`;
+      else if(s.log.length) document.getElementById('sh-status').textContent = '新しいデータはありませんでした';
+    }
+  }catch(e){}
+}
+async function updateShort(){
+  const r = await (await fetch('/api/short/update',{method:'POST'})).json();
+  if(!r.ok){ alert(r.msg); return; }
+  document.getElementById('sh-status').textContent = '取得開始...';
+  setTimeout(loadShortStatus, 800);
+}
+
+// 起動時に前回スキャン結果を復元
+poll();
+loadShortStatus();
+</script>
+{% endblock %}

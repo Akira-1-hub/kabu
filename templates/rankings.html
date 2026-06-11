@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}ランキング - 投資DB{% endblock %}
+{% block content %}
+
+<div class="page-title">🏆 ランキング</div>
+
+{% macro rank_table(title, rows, kind) %}
+<div class="card">
+  <h2>{{ title }}</h2>
+  <div class="table-wrap" style="max-height:480px;overflow-y:auto">
+    <table>
+      <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th>
+        {% if kind=='surge' %}<th>倍率</th><th class="hide-sp">出来高</th>
+        {% elif kind=='hit' %}<th>回数</th><th class="hide-sp">最終</th>
+        {% else %}<th>前日比%</th><th class="hide-sp">終値</th>{% endif %}
+      </tr></thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td class="txt-left code"><a href="/stock/{{ r.code }}">{{ r.code }}</a></td>
+          <td class="txt-left"><a href="/stock/{{ r.code }}" style="color:inherit">{{ r.name or '-' }}</a></td>
+          {% if kind=='surge' %}
+            <td><span class="badge accent">{{ '{:.1f}x'.format(r.volume_ratio) }}</span></td>
+            <td class="hide-sp">{{ '{:,.0f}'.format(r.volume) if r.volume else '-' }}</td>
+          {% elif kind=='hit' %}
+            <td><span class="badge accent">{{ r.hit_count }}回</span></td>
+            <td class="hide-sp muted">{{ r.last_date }}</td>
+          {% else %}
+            <td class="{{ 'rise' if (r.change_pct or 0)>0 else 'fall' }}">{{ '{:+.2f}%'.format(r.change_pct) }}</td>
+            <td class="hide-sp">{{ '{:,.0f}'.format(r.close) if r.close else '-' }}</td>
+          {% endif %}
+        </tr>
+        {% else %}<tr><td colspan="4" class="empty">スキャンするとデータが溜まります</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endmacro %}
+
+<div class="grid grid-2">
+  {{ rank_table('📈 値上がり率', by_rise, 'rise') }}
+  {{ rank_table('📉 値下がり率', by_fall, 'fall') }}
+  {{ rank_table('🔥 出来高急増', by_surge, 'surge') }}
+  {{ rank_table('🔁 継続出現（30日）', hit_ranking, 'hit') }}
+</div>
+
+{% endblock %}
