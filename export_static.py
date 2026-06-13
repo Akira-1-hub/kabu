@@ -64,8 +64,10 @@ def build():
     for period in ('daily', 'weekly', 'thisweek'):
         rank = db.short_change_ranking(period, limit=50)
         new = db.short_new_entries(period, limit=50)
+        sq = db.squeeze_ranking(period, limit=50)
         short_sum[period] = {'from': rank['from'], 'increase': rank['increase'],
-                             'decrease': rank['decrease'], 'new': new['entries']}
+                             'decrease': rank['decrease'], 'new': new['entries'],
+                             'squeeze': sq['rows'], 'price_latest': sq['price_latest']}
 
     data = {
         'updated': datetime.now().strftime('%Y-%m-%d %H:%M'),

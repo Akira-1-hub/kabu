@@ -165,10 +165,12 @@ def short_page():
         period = 'daily'
     rank = db.short_change_ranking(period, limit=50)
     new_short = db.short_new_entries(period, limit=50)
+    squeeze = db.squeeze_ranking(period, limit=50)
     return render_template('short.html',
                            period=period,
                            rank=rank,
                            new_short=new_short,
+                           squeeze=squeeze,
                            top_ratio=db.short_top_ratio(50),
                            info=db.short_data_range())
 

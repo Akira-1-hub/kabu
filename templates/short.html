@@ -18,6 +18,41 @@
   <span class="muted" style="font-size:12px">累計{{ '{:,}'.format(info.n) }}件 / {{ info.codes }}銘柄</span>
 </div>
 
+<!-- 🔥 踏み上げ警戒 -->
+<div class="card" style="margin-bottom:14px;border-color:#5a3a2a">
+  <h2 style="background:linear-gradient(90deg,rgba(255,107,107,.15),var(--bg3))">
+    🔥 踏み上げ警戒（空売り増加 × 株価上昇）
+    <span class="muted">{{ squeeze.rows|length }}件 / 株価{{ squeeze.price_latest or '-' }}</span>
+  </h2>
+  <div class="table-wrap" style="max-height:560px;overflow-y:auto">
+    <table>
+      <thead><tr>
+        <th class="txt-left">コード</th><th class="txt-left">銘柄名</th>
+        <th>踏み上げ度</th><th>空売り増</th><th>残高%</th>
+        <th>期間騰落</th><th class="hide-sp">続伸</th><th class="hide-sp">出来高</th><th class="hide-sp">機関</th>
+      </tr></thead>
+      <tbody>
+        {% for r in squeeze.rows %}
+        <tr>
+          <td class="txt-left code"><a href="/stock/{{ r.code }}">{{ r.code }}</a></td>
+          <td class="txt-left"><a href="/stock/{{ r.code }}" style="color:inherit">{{ r.name or '-' }}</a></td>
+          <td><b class="both" style="font-size:14px">{{ r.score }}</b></td>
+          <td class="rise">+{{ '{:.2f}'.format(r.short_delta) }}pt</td>
+          <td><b>{{ '{:.1f}%'.format(r.cur_ratio) }}</b></td>
+          <td class="rise"><b>{{ '+{:.1f}%'.format(r.price_gain) }}</b></td>
+          <td class="hide-sp muted">{{ r.up_days }}日</td>
+          <td class="hide-sp">{{ (r.vol_ratio|string + 'x') if r.vol_ratio else '-' }}</td>
+          <td class="hide-sp muted">{{ r.inst }}</td>
+        </tr>
+        {% else %}<tr><td colspan="9" class="empty">該当銘柄なし（空売り増加かつ株価上昇の銘柄）</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="muted" style="font-size:11px;padding:6px 12px">
+    ※度＝空売り増加幅 × 株価上昇 × 残高水準 × 続伸 × 出来高の合成。高いほど売り方が踏まされ買い戻し圧力が溜まっている候補。
+  </div>
+</div>
+
 {% macro change_table(title, rows, kind) %}
 <div class="card">
   <h2>{{ title }}</h2>

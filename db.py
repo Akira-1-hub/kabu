@@ -589,6 +589,86 @@ def short_change_ranking(period='daily', limit=50, min_abs=0.01):
     return {'increase': increase, 'decrease': decrease, 'latest': latest, 'from': from_date}
 
 
+# 踏み上げスコアの重み（あとで調整可能）
+SQUEEZE_WEIGHTS = {
+    'short_delta': 8.0,   # 空売り増加(pt)
+    'price_gain': 1.5,    # 期間騰落率(%)
+    'short_level': 5.0,   # 現在の残高水準(%)＝燃料（重視）
+    'up_days': 2.0,       # 続伸日数
+    'vol': 4.0,           # 出来高急増ボーナス
+}
+MIN_SQUEEZE_RATIO = 2.0   # この残高割合(%)未満は踏み上げ対象外（玉が少なすぎ）
+
+
+def _price_momentum(k):
+    """各銘柄の直近k営業日の株価モメンタム
+    返り値 code -> {c0(最新終値), gain(%), up_days, vr(出来高倍率), latest}
+    """
+    conn = get_conn()
+    rows = conn.execute("""
+        WITH ranked AS (
+            SELECT code, date, close, change_pct, volume_ratio,
+                   ROW_NUMBER() OVER (PARTITION BY code ORDER BY date DESC) rn
+            FROM daily_prices
+        )
+        SELECT code,
+            MAX(CASE WHEN rn=1 THEN close END)        AS c0,
+            MAX(CASE WHEN rn=1 THEN date END)         AS latest,
+            MAX(CASE WHEN rn=1 THEN volume_ratio END) AS vr,
+            MAX(CASE WHEN rn=? THEN close END)        AS ck,
+            SUM(CASE WHEN change_pct>0 THEN 1 ELSE 0 END) AS up_days
+        FROM ranked WHERE rn <= ? GROUP BY code
+    """, (k, k)).fetchall()
+    conn.close()
+    out = {}
+    for r in rows:
+        c0, ck = r['c0'], r['ck']
+        gain = round((c0 - ck) / ck * 100, 2) if (c0 and ck and ck > 0) else None
+        out[r['code']] = {'c0': c0, 'gain': gain, 'up_days': r['up_days'],
+                          'vr': r['vr'], 'latest': r['latest']}
+    return out
+
+
+def squeeze_ranking(period='weekly', limit=50, weights=None):
+    """🔥踏み上げ警戒：空売り増加 かつ 株価上昇 の銘柄を合成スコアで降順
+    返り値: {'rows':[...], 'latest':短最新, 'from':基準, 'price_latest':株価最新}
+    """
+    w = {**SQUEEZE_WEIGHTS, **(weights or {})}
+    rank = short_change_ranking(period, limit=10 ** 9, min_abs=0.01)
+    inc = rank['increase']                # 空売り増加（delta_ratio>0）
+    if not inc:
+        return {'rows': [], 'latest': rank['latest'], 'from': rank['from'], 'price_latest': None}
+
+    k = {'daily': 2, 'weekly': 5, 'thisweek': 5}.get(period, 5)
+    mom = _price_momentum(k)
+    price_latest = next((m['latest'] for m in mom.values() if m.get('latest')), None)
+
+    rows = []
+    for s in inc:
+        if s['cur_ratio'] < MIN_SQUEEZE_RATIO:
+            continue                       # 残高が少なすぎ＝踏ませる玉がない
+        m = mom.get(s['code'])
+        if not m or m['gain'] is None or m['gain'] <= 0:
+            continue                       # 株価が上がっていなければ踏み上げではない
+        vol_bonus = w['vol'] if (m['vr'] and m['vr'] >= 1.5) else 0
+        score = (s['delta_ratio'] * w['short_delta']
+                 + m['gain'] * w['price_gain']
+                 + s['cur_ratio'] * w['short_level']
+                 + (m['up_days'] or 0) * w['up_days']
+                 + vol_bonus)
+        rows.append({
+            'code': s['code'], 'name': s['name'],
+            'score': round(score, 1),
+            'short_delta': s['delta_ratio'], 'cur_ratio': s['cur_ratio'],
+            'price_gain': m['gain'], 'up_days': m['up_days'],
+            'vol_ratio': round(m['vr'], 1) if m['vr'] else None,
+            'close': m['c0'], 'inst': s['inst'],
+        })
+    rows.sort(key=lambda x: x['score'], reverse=True)
+    return {'rows': rows[:limit], 'latest': rank['latest'],
+            'from': rank['from'], 'price_latest': price_latest}
+
+
 def short_top_ratio(limit=50):
     """最新日 空売り残高割合トップ（積み上がっている銘柄）"""
     latest = short_max_date()
