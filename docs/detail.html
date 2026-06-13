@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>銘柄詳細 - 投資DB</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   :root {
     --bg:#0f0f1a; --bg2:#1a1a2e; --bg3:#252540; --text:#e0e0f0; --muted:#8888aa;
@@ -78,10 +78,10 @@
       </span>
     </h2>
     <div class="body">
-      <canvas id="c-main" height="110"></canvas>
+      <div id="c-main" style="height:340px"></div>
       <div id="c-short-wrap" style="display:none">
         <div class="muted" style="font-size:11px;margin-top:12px">空売り残高合計（%）</div>
-        <canvas id="c-short" height="42"></canvas>
+        <div id="c-short" style="height:140px"></div>
       </div>
     </div>
   </div>
@@ -162,44 +162,53 @@ fetch(`data/${code}.json`).then(r=>{
     }
   }
 
-  // チャート（株価＋出来高 統合 / 期間切替）
-  const grid={color:'#2a2a4a'}, tick={color:'#8888aa',font:{size:10}};
-  let chMain=null, chShort=null;
-  window.renderCharts = function(days){
-    const p = days>0 ? D.prices.slice(-days) : D.prices;
-    if(chMain){chMain.destroy();chMain=null;}
-    if(chShort){chShort.destroy();chShort=null;}
-    if(p.length){
-      const maxVol = Math.max(...p.map(x=>x.v||0));
-      chMain = new Chart(document.getElementById('c-main'),{
-        data:{labels:p.map(x=>x.d),datasets:[
-          {type:'line',label:'終値',data:p.map(x=>x.c),yAxisID:'y',
-           borderColor:'#00bcd4',backgroundColor:'rgba(0,188,212,.06)',fill:true,tension:.1,pointRadius:0,borderWidth:1.6},
-          {type:'bar',label:'出来高',data:p.map(x=>x.v),yAxisID:'y2',backgroundColor:'rgba(124,77,255,.4)'},
-        ]},
-        options:{responsive:true,plugins:{legend:{display:false}},
-          interaction:{mode:'index',intersect:false},
-          scales:{x:{grid,ticks:{...tick,maxTicksLimit:10}},
-                  y:{grid,ticks:tick,position:'right'},
-                  y2:{display:false,suggestedMax:maxVol*3.2}}}
-      });
-    }
-    let s = D.short.series;
-    if(days>0 && p.length){ const cut=p[0].d; s = s.filter(x=>x.d>=cut); }
-    if(s.length){
-      document.getElementById('c-short-wrap').style.display='block';
-      chShort = new Chart(document.getElementById('c-short'),{type:'line',
-        data:{labels:s.map(x=>x.d),datasets:[{data:s.map(x=>x.r),
-          borderColor:'#ff6b6b',backgroundColor:'rgba(255,107,107,.08)',fill:true,tension:.1,pointRadius:0,borderWidth:1.5}]},
-        options:{responsive:true,plugins:{legend:{display:false}},
-          scales:{x:{grid,ticks:{...tick,maxTicksLimit:10}},y:{grid,ticks:tick,position:'right'}}}});
-    }
+  // ローソク足チャート（lightweight-charts / 期間切替）
+  const OPTS = {
+    autoSize: true,
+    layout: {background:{type:'solid',color:'transparent'}, textColor:'#8888aa', fontSize:11},
+    grid: {vertLines:{color:'#20203a'}, horzLines:{color:'#20203a'}},
+    rightPriceScale: {borderColor:'#2a2a4a'},
+    timeScale: {borderColor:'#2a2a4a'},
+    crosshair: {mode:0},
   };
+  const UP='#ff6b6b', DOWN='#4fc3f7';
+  const rows = D.prices.filter(x=>x.o!=null&&x.h!=null&&x.l!=null&&x.c!=null);
+  const CAND = rows.map(x=>({time:x.d,open:x.o,high:x.h,low:x.l,close:x.c}));
+  const VOL  = rows.map(x=>({time:x.d,value:x.v||0,
+                color:x.c>=x.o?'rgba(255,107,107,.35)':'rgba(79,195,247,.35)'}));
+  const SHRT = D.short.series.map(x=>({time:x.d,value:x.r}));
+  let sC=null,sV=null,sS=null,chM=null,chS=null;
+
+  if(CAND.length){
+    chM = LightweightCharts.createChart(document.getElementById('c-main'), OPTS);
+    sC = chM.addCandlestickSeries({upColor:UP,downColor:DOWN,
+      borderUpColor:UP,borderDownColor:DOWN,wickUpColor:UP,wickDownColor:DOWN});
+    sV = chM.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:'vol'});
+    chM.priceScale('vol').applyOptions({scaleMargins:{top:0.78,bottom:0}});
+  }
+  if(SHRT.length){
+    document.getElementById('c-short-wrap').style.display='block';
+    chS = LightweightCharts.createChart(document.getElementById('c-short'), OPTS);
+    sS = chS.addAreaSeries({lineColor:UP,topColor:'rgba(255,107,107,.25)',
+      bottomColor:'rgba(255,107,107,.02)',lineWidth:1.5});
+  }
+  function setRange(days){
+    if(sC){
+      const c = days>0?CAND.slice(-days):CAND;
+      sC.setData(c); sV.setData(days>0?VOL.slice(-days):VOL);
+      chM.timeScale().fitContent();
+      if(sS){
+        const cut = c.length?c[0].time:null;
+        sS.setData((days>0&&cut)?SHRT.filter(p=>p.time>=cut):SHRT);
+        chS.timeScale().fitContent();
+      }
+    } else if(sS){ sS.setData(SHRT); chS.timeScale().fitContent(); }
+  }
   document.querySelectorAll('.rbtn').forEach(b=>{
     b.onclick=()=>{document.querySelectorAll('.rbtn').forEach(x=>x.classList.remove('on'));
-      b.classList.add('on'); renderCharts(parseInt(b.dataset.d));};
+      b.classList.add('on'); setRange(parseInt(b.dataset.d));};
   });
-  renderCharts(130);
+  setRange(130);
 
   // 機関別
   document.getElementById('b-inst').innerHTML = D.short.inst.map(r=>`<tr>

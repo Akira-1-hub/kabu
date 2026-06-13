@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ stock.code }} {{ stock.name }} - 投資DB{% endblock %}
-{% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>{% endblock %}
+{% block head %}<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>{% endblock %}
 {% block content %}
 
 {% set latest = history[0] if history else None %}
@@ -78,10 +78,10 @@
     </span>
   </h2>
   <div class="body">
-    <canvas id="mainChart" height="110"></canvas>
+    <div id="mainChart" style="height:340px"></div>
     <div id="shortChartWrap" style="display:none">
       <div class="muted" style="font-size:11px;margin-top:12px">空売り残高合計（%）</div>
-      <canvas id="shortChart" height="42"></canvas>
+      <div id="shortChart" style="height:140px"></div>
     </div>
   </div>
 </div>
@@ -183,60 +183,63 @@ async function addMemo(){
   document.getElementById('memo-list').innerHTML = r.memos.map(m=>`<div class="memo-item"><div class="date">${m.date}</div>${m.text}</div>`).join('');
 }
 
-// ===== チャート（株価＋出来高 統合 / 期間切替） =====
-let PH = [], SH = [];
-let chMain = null, chShort = null;
-const grid = {color:'#2a2a4a'}, tick = {color:'#8888aa', font:{size:10}};
+// ===== ローソク足チャート（lightweight-charts / 期間切替） =====
+let CANDLES = [], VOLS = [], SHORTS = [];
+let sCandle = null, sVol = null, sShort = null;
+
+const CHART_OPTS = {
+  autoSize: true,
+  layout: { background: {type:'solid', color:'transparent'}, textColor:'#8888aa', fontSize:11 },
+  grid: { vertLines:{color:'#20203a'}, horzLines:{color:'#20203a'} },
+  rightPriceScale: { borderColor:'#2a2a4a' },
+  timeScale: { borderColor:'#2a2a4a' },
+  crosshair: { mode: 0 },
+};
+const UP = '#ff6b6b', DOWN = '#4fc3f7';  // 陽線=赤 / 陰線=青
 
 Promise.all([
   fetch('/api/price_history/'+CODE).then(r=>r.json()),
   fetch('/api/short_daily/'+CODE).then(r=>r.json()),
 ]).then(([ph, sh])=>{
-  PH = ph; SH = sh;
-  renderCharts(130);  // 初期=6M
+  const rows = ph.filter(d=>d.open!=null && d.high!=null && d.low!=null && d.close!=null);
+  CANDLES = rows.map(d=>({time:d.date, open:d.open, high:d.high, low:d.low, close:d.close}));
+  VOLS = rows.map(d=>({time:d.date, value:d.volume||0,
+                       color: d.close>=d.open ? 'rgba(255,107,107,.35)' : 'rgba(79,195,247,.35)'}));
+  SHORTS = sh.map(d=>({time:d.date, value:d.total_ratio}));
+
+  if(CANDLES.length){
+    const chMain = LightweightCharts.createChart(document.getElementById('mainChart'), CHART_OPTS);
+    sCandle = chMain.addCandlestickSeries({upColor:UP, downColor:DOWN,
+      borderUpColor:UP, borderDownColor:DOWN, wickUpColor:UP, wickDownColor:DOWN});
+    sVol = chMain.addHistogramSeries({priceFormat:{type:'volume'}, priceScaleId:'vol'});
+    chMain.priceScale('vol').applyOptions({scaleMargins:{top:0.78, bottom:0}});
+    window._chMain = chMain;
+  }
+  if(SHORTS.length){
+    document.getElementById('shortChartWrap').style.display='block';
+    const chShort = LightweightCharts.createChart(document.getElementById('shortChart'), CHART_OPTS);
+    sShort = chShort.addAreaSeries({lineColor:UP, topColor:'rgba(255,107,107,.25)',
+      bottomColor:'rgba(255,107,107,.02)', lineWidth:1.5});
+    window._chShort = chShort;
+  }
+  setRange(130);  // 初期=6M
 });
 
-function renderCharts(days){
-  const p = days>0 ? PH.slice(-days) : PH;
-  if(chMain){ chMain.destroy(); chMain=null; }
-  if(chShort){ chShort.destroy(); chShort=null; }
-  if(p.length){
-    const maxVol = Math.max(...p.map(d=>d.volume||0));
-    chMain = new Chart(document.getElementById('mainChart'),{
-      data:{
-        labels: p.map(d=>d.date),
-        datasets:[
-          {type:'line', label:'終値', data:p.map(d=>d.close), yAxisID:'y',
-           borderColor:'#00bcd4', backgroundColor:'rgba(0,188,212,.06)', fill:true,
-           tension:.1, pointRadius:0, borderWidth:1.6},
-          {type:'bar', label:'出来高', data:p.map(d=>d.volume), yAxisID:'y2',
-           backgroundColor:'rgba(124,77,255,.4)'},
-        ]
-      },
-      options:{responsive:true, plugins:{legend:{display:false}},
-        interaction:{mode:'index', intersect:false},
-        scales:{
-          x:{grid, ticks:{...tick, maxTicksLimit:10}},
-          y:{grid, ticks:tick, position:'right'},
-          y2:{display:false, suggestedMax: maxVol*3.2},  // 出来高は下1/3に表示
-        }}
-    });
-  }
-  // 空売りは株価表示期間と同じ開始日に揃える（全部のときは全期間）
-  let s = SH;
-  if(days>0 && p.length){
-    const cutoff = p[0].date;
-    s = SH.filter(d=>d.date >= cutoff);
-  }
-  if(s.length){
-    document.getElementById('shortChartWrap').style.display='block';
-    chShort = new Chart(document.getElementById('shortChart'),{
-      type:'line',
-      data:{labels:s.map(d=>d.date),datasets:[{data:s.map(d=>d.total_ratio),
-        borderColor:'#ff6b6b',backgroundColor:'rgba(255,107,107,.08)',fill:true,tension:.1,pointRadius:0,borderWidth:1.5}]},
-      options:{responsive:true,plugins:{legend:{display:false}},
-        scales:{x:{grid,ticks:{...tick,maxTicksLimit:10}},y:{grid,ticks:tick,position:'right'}}}
-    });
+function setRange(days){
+  if(sCandle){
+    const c = days>0 ? CANDLES.slice(-days) : CANDLES;
+    const v = days>0 ? VOLS.slice(-days) : VOLS;
+    sCandle.setData(c); sVol.setData(v);
+    window._chMain.timeScale().fitContent();
+    if(sShort){
+      const cutoff = c.length ? c[0].time : null;
+      const s = (days>0 && cutoff) ? SHORTS.filter(p=>p.time >= cutoff) : SHORTS;
+      sShort.setData(s);
+      window._chShort.timeScale().fitContent();
+    }
+  } else if(sShort){
+    sShort.setData(SHORTS);
+    window._chShort.timeScale().fitContent();
   }
 }
 
@@ -244,7 +247,7 @@ document.querySelectorAll('.range-btn').forEach(b=>{
   b.onclick = ()=>{
     document.querySelectorAll('.range-btn').forEach(x=>x.classList.remove('on'));
     b.classList.add('on');
-    renderCharts(parseInt(b.dataset.d));
+    setRange(parseInt(b.dataset.d));
   };
 });
 </script>
