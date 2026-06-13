@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ stock.code }} {{ stock.name }} - 投資DB{% endblock %}
-{% block head %}<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>{% endblock %}
+{% block head %}<script src="{{ url_for('static', filename='chart.js') }}"></script>{% endblock %}
 {% block content %}
 
 {% set latest = history[0] if history else None %}
@@ -78,10 +78,10 @@
     </span>
   </h2>
   <div class="body">
-    <div id="mainChart" style="height:340px"></div>
+    <div id="mainChart"></div>
     <div id="shortChartWrap" style="display:none">
       <div class="muted" style="font-size:11px;margin-top:12px">空売り残高合計（%）</div>
-      <div id="shortChart" style="height:140px"></div>
+      <div id="shortChart"></div>
     </div>
   </div>
 </div>
@@ -183,71 +183,26 @@ async function addMemo(){
   document.getElementById('memo-list').innerHTML = r.memos.map(m=>`<div class="memo-item"><div class="date">${m.date}</div>${m.text}</div>`).join('');
 }
 
-// ===== ローソク足チャート（lightweight-charts / 期間切替） =====
-let CANDLES = [], VOLS = [], SHORTS = [];
-let sCandle = null, sVol = null, sShort = null;
-
-const CHART_OPTS = {
-  autoSize: true,
-  layout: { background: {type:'solid', color:'transparent'}, textColor:'#8888aa', fontSize:11 },
-  grid: { vertLines:{color:'#20203a'}, horzLines:{color:'#20203a'} },
-  rightPriceScale: { borderColor:'#2a2a4a' },
-  timeScale: { borderColor:'#2a2a4a' },
-  crosshair: { mode: 0 },
-};
-const UP = '#ff6b6b', DOWN = '#4fc3f7';  // 陽線=赤 / 陰線=青
-
+// ===== 自前ローソク足チャート（株価＋出来高＋空売り 1対1連動） =====
+let CHART = null;
 Promise.all([
   fetch('/api/price_history/'+CODE).then(r=>r.json()),
   fetch('/api/short_daily/'+CODE).then(r=>r.json()),
 ]).then(([ph, sh])=>{
-  const rows = ph.filter(d=>d.open!=null && d.high!=null && d.low!=null && d.close!=null);
-  CANDLES = rows.map(d=>({time:d.date, open:d.open, high:d.high, low:d.low, close:d.close}));
-  VOLS = rows.map(d=>({time:d.date, value:d.volume||0,
-                       color: d.close>=d.open ? 'rgba(255,107,107,.35)' : 'rgba(79,195,247,.35)'}));
-  SHORTS = sh.map(d=>({time:d.date, value:d.total_ratio}));
-
-  if(CANDLES.length){
-    const chMain = LightweightCharts.createChart(document.getElementById('mainChart'), CHART_OPTS);
-    sCandle = chMain.addCandlestickSeries({upColor:UP, downColor:DOWN,
-      borderUpColor:UP, borderDownColor:DOWN, wickUpColor:UP, wickDownColor:DOWN});
-    sVol = chMain.addHistogramSeries({priceFormat:{type:'volume'}, priceScaleId:'vol'});
-    chMain.priceScale('vol').applyOptions({scaleMargins:{top:0.78, bottom:0}});
-    window._chMain = chMain;
-  }
-  if(SHORTS.length){
-    document.getElementById('shortChartWrap').style.display='block';
-    const chShort = LightweightCharts.createChart(document.getElementById('shortChart'), CHART_OPTS);
-    sShort = chShort.addAreaSeries({lineColor:UP, topColor:'rgba(255,107,107,.25)',
-      bottomColor:'rgba(255,107,107,.02)', lineWidth:1.5});
-    window._chShort = chShort;
-  }
-  setRange(130);  // 初期=6M
+  const bars = ph.filter(d=>d.open!=null && d.high!=null && d.low!=null && d.close!=null)
+    .map(d=>({time:d.date, open:d.open, high:d.high, low:d.low, close:d.close, volume:d.volume||0}));
+  const shorts = sh.map(d=>({time:d.date, value:d.total_ratio}));
+  document.getElementById('shortChartWrap').style.display = shorts.length ? 'block' : 'none';
+  CHART = makeStockChart(document.getElementById('mainChart'),
+                         document.getElementById('shortChart'), bars, shorts);
+  CHART.setDays(130);
 });
-
-function setRange(days){
-  if(sCandle){
-    const c = days>0 ? CANDLES.slice(-days) : CANDLES;
-    const v = days>0 ? VOLS.slice(-days) : VOLS;
-    sCandle.setData(c); sVol.setData(v);
-    window._chMain.timeScale().fitContent();
-    if(sShort){
-      const cutoff = c.length ? c[0].time : null;
-      const s = (days>0 && cutoff) ? SHORTS.filter(p=>p.time >= cutoff) : SHORTS;
-      sShort.setData(s);
-      window._chShort.timeScale().fitContent();
-    }
-  } else if(sShort){
-    sShort.setData(SHORTS);
-    window._chShort.timeScale().fitContent();
-  }
-}
 
 document.querySelectorAll('.range-btn').forEach(b=>{
   b.onclick = ()=>{
     document.querySelectorAll('.range-btn').forEach(x=>x.classList.remove('on'));
     b.classList.add('on');
-    setRange(parseInt(b.dataset.d));
+    if(CHART) CHART.setDays(parseInt(b.dataset.d));
   };
 });
 </script>

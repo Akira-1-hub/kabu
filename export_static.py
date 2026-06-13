@@ -130,6 +130,10 @@ def build():
         src = os.path.join(DOCS, fn)
         if os.path.exists(src):
             shutil.copy2(src, os.path.join(SITE, fn))
+    # チャートエンジン
+    chart_src = os.path.join(BASE, 'static', 'chart.js')
+    if os.path.exists(chart_src):
+        shutil.copy2(chart_src, os.path.join(SITE, 'chart.js'))
     # Jekyll処理を無効化（_ファイルや高速配信のため）
     open(os.path.join(SITE, '.nojekyll'), 'w').close()
 
