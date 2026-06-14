@@ -158,6 +158,7 @@ def api_short_update():
 @app.route('/api/short/update_status')
 def api_short_update_status():
     info = db.short_data_range()
+    gaps = db.short_gaps()
     return jsonify({
         'running': short_update_state['running'],
         'log': short_update_state['log'][-20:],
@@ -166,6 +167,8 @@ def api_short_update_status():
         'max_date': info.get('max_d'),
         'codes': info.get('codes', 0),
         'days': info.get('days', 0),
+        'gaps': gaps[-10:],
+        'gap_count': len(gaps),
     })
 
 

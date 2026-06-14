@@ -62,7 +62,8 @@ def parse_jpx_excel(content: bytes):
     """JPX Excelをパースして行リストを返す
     返り値: list of dict(code,date,institution,ratio,shares,prev_ratio)
     """
-    df = pd.read_excel(content, sheet_name=0, header=6)
+    from io import BytesIO
+    df = pd.read_excel(BytesIO(content), sheet_name=0, header=6)
     rows = []
     for t in df.itertuples(index=False):
         # col1=計算年月日 col2=コード col5=機関 col10=残高割合 col11=残高数量 col14=直近割合
@@ -111,16 +112,21 @@ def _load_prev_shares_map():
     return {(r['code'], r['institution']): (r['date'], r['shares']) for r in rows}
 
 
+# karauri(123.xlsx)の最終日。これ以前=karauri / これより後=JPXを権威とし混在させない
+KARAURI_CUTOVER = '2026-06-05'
+
+
 def import_jpx(since_date=None, max_files=None, log=print):
     """
-    JPXの日次ファイルを取り込む
-    since_date: この日付より後の計算日のみ取り込む（Noneなら現DB最大日を使用）
+    JPXの日次ファイルを取り込む（自己修復型）
+    毎回 indexの全ファイル（直近約10営業日）を取り込み直すので、
+    数日〜2週間のサボりは自動で穴埋めされる。
+    since_date 未指定時は KARAURI_CUTOVER を下限に使用（karauri期間は触らない）。
     """
     db.init_db()
-    info = db.short_data_range()
     if since_date is None:
-        since_date = info.get('max_d') or '2000-01-01'
-    log(f'取り込み基準日: {since_date} より後の計算日を追加')
+        since_date = KARAURI_CUTOVER
+    log(f'取り込み下限: {since_date} より後の計算日を毎回再取得（自己修復）')
 
     files = list_jpx_files()
     if max_files:
@@ -140,8 +146,8 @@ def import_jpx(since_date=None, max_files=None, log=print):
             log(f'  {pub_date}: ダウンロード失敗 {e}')
             continue
 
-        # since_date以降の計算日（境界日も再取込してJPXの完全版に更新）
-        new_rows = [p for p in parsed if p['date'] >= since_date]
+        # 下限より後の計算日を毎回再取込（INSERT OR REPLACEで冪等＝自己修復）
+        new_rows = [p for p in parsed if p['date'] > since_date]
         if not new_rows:
             log(f'  公表{pub_date}: 対象計算日なし（{len(parsed)}行中0行）')
             continue

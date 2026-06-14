@@ -696,6 +696,28 @@ def short_top_ratio(limit=50):
     return sorted(rows, key=lambda x: x['total_ratio'], reverse=True)[:limit]
 
 
+def short_gaps(lag_days=3):
+    """空売りデータの欠損日を検出。
+    取引日(daily_pricesに存在する日)のうち short_selling に無い日を返す。
+    祝日は daily_prices に無いので自動除外。直近lag_days(T+2開示ラグ)は除く。
+    """
+    conn = get_conn()
+    smin = conn.execute('SELECT MIN(date) d FROM short_selling').fetchone()['d']
+    pmin = conn.execute('SELECT MIN(date) d FROM daily_prices').fetchone()['d']
+    if not smin or not pmin:
+        conn.close()
+        return []
+    floor = max(smin, pmin)
+    trade_days = [r['date'] for r in conn.execute(
+        'SELECT DISTINCT date FROM daily_prices WHERE date >= ? ORDER BY date', (floor,)
+    ).fetchall()]
+    short_days = set(r['date'] for r in conn.execute(
+        'SELECT DISTINCT date FROM short_selling').fetchall())
+    conn.close()
+    eligible = trade_days[:-lag_days] if len(trade_days) > lag_days else []
+    return [d for d in eligible if d not in short_days]
+
+
 def short_data_range():
     """空売りデータの件数と日付範囲"""
     conn = get_conn()

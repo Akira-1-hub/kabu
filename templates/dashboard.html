@@ -52,6 +52,7 @@
       <div><span class="muted">銘柄数</span> <b id="sh-codes">-</b></div>
       <div><span class="muted">日数</span> <b id="sh-days">-</b></div>
       <div><span class="muted">最新計算日</span> <b id="sh-date">-</b></div>
+      <div id="sh-gap"></div>
       <span class="muted" id="sh-status" style="font-size:12px"></span>
     </div>
   </div>
@@ -263,6 +264,12 @@ async function loadShortStatus(){
     document.getElementById('sh-codes').textContent = s.codes.toLocaleString();
     document.getElementById('sh-days').textContent = s.days.toLocaleString();
     document.getElementById('sh-date').textContent = s.max_date || '-';
+    const gapEl = document.getElementById('sh-gap');
+    if(s.gap_count > 0){
+      gapEl.innerHTML = `<b style="color:#ff9f43">⚠ 欠損${s.gap_count}日</b> <span class="muted" style="font-size:11px">${s.gaps.join(', ')}</span>`;
+    } else {
+      gapEl.innerHTML = `<span style="color:#2ecc71">✓ 欠損なし</span>`;
+    }
     if(s.running){
       document.getElementById('sh-status').textContent = '取得中... ' + (s.log[s.log.length-1]||'');
       document.getElementById('btn-short').textContent = '⏳ 取得中';
