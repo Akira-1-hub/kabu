@@ -48,6 +48,9 @@ def build():
             hits_by_code[r['code']].append(r)
 
     funds = {r['code']: dict(r) for r in conn.execute('SELECT * FROM fundamentals').fetchall()}
+    tags_by_code = defaultdict(list)
+    for r in conn.execute('SELECT code,date,tag,memo FROM flow_tags ORDER BY code, date DESC'):
+        tags_by_code[r['code']].append({'date': r['date'], 'tag': r['tag'], 'memo': r['memo']})
     conn.close()
 
     # ---- 一覧 data.json ----
@@ -122,6 +125,7 @@ def build():
             'short': {'series': series, 'inst': inst},
             'hits': [{'d': h['date'], 'c': h['condition'], 't': h['detail']}
                      for h in hits_by_code.get(code, [])],
+            'tags': tags_by_code.get(code, []),
         }
         with open(os.path.join(SITE, 'data', f'{code}.json'), 'w', encoding='utf-8') as f:
             json.dump(detail, f, ensure_ascii=False, separators=(',', ':'))

@@ -101,6 +101,18 @@ CREATE TABLE IF NOT EXISTS memos (
 );
 CREATE INDEX IF NOT EXISTS idx_memo_code ON memos(code);
 
+-- 大口傾向タグ（moomoo確認を手動記録）buy/neutral/sell
+CREATE TABLE IF NOT EXISTS flow_tags (
+    code        TEXT,
+    date        TEXT,        -- YYYY-MM-DD（1日1件・上書き）
+    tag         TEXT,        -- buy / neutral / sell
+    memo        TEXT,
+    created_at  TEXT,
+    PRIMARY KEY (code, date)
+);
+CREATE INDEX IF NOT EXISTS idx_ft_code ON flow_tags(code);
+CREATE INDEX IF NOT EXISTS idx_ft_date ON flow_tags(date);
+
 -- 企業ファンダメンタルズ（クリック時取得・キャッシュ）
 CREATE TABLE IF NOT EXISTS fundamentals (
     code            TEXT PRIMARY KEY,
@@ -711,6 +723,56 @@ def recreate_short_table():
     conn.execute('CREATE INDEX idx_ss_date ON short_selling(date)')
     conn.commit()
     conn.close()
+
+
+# ============================================================
+# 大口傾向タグ
+# ============================================================
+FLOW_TAGS = ('buy', 'neutral', 'sell')
+FLOW_LABEL = {'buy': '買い優勢', 'neutral': '中立', 'sell': '売り優勢'}
+
+
+def save_flow_tag(code, tag, memo='', date=None):
+    if tag not in FLOW_TAGS:
+        return
+    conn = get_conn()
+    if date is None:
+        # その銘柄の最新営業日に合わせる（チャートのローソクにマーカーが乗るように）
+        r = conn.execute('SELECT MAX(date) d FROM daily_prices WHERE code=?', (code,)).fetchone()
+        date = (r['d'] if r and r['d'] else datetime.now().strftime('%Y-%m-%d'))
+    conn.execute("""
+        INSERT OR REPLACE INTO flow_tags(code,date,tag,memo,created_at)
+        VALUES(?,?,?,?,?)
+    """, (code, date, tag, memo, datetime.now().isoformat(timespec='seconds')))
+    conn.commit()
+    conn.close()
+
+
+def delete_flow_tag(code, date):
+    conn = get_conn()
+    conn.execute('DELETE FROM flow_tags WHERE code=? AND date=?', (code, date))
+    conn.commit()
+    conn.close()
+
+
+def get_flow_tags(code):
+    conn = get_conn()
+    rows = conn.execute(
+        'SELECT * FROM flow_tags WHERE code=? ORDER BY date DESC', (code,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def recent_flow_tags(limit=20):
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT ft.*, s.name FROM flow_tags ft
+        LEFT JOIN stocks s ON ft.code=s.code
+        ORDER BY ft.date DESC, ft.created_at DESC LIMIT ?
+    """, (limit,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 # ============================================================

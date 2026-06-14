@@ -124,6 +124,30 @@
   </div>
 </div>
 
+<!-- 最近の大口タグ -->
+<div class="card" style="margin-top:14px">
+  <h2>🏷 最近の大口タグ（moomoo確認の記録）</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th class="txt-left">日付</th><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th class="txt-left">傾向</th><th class="txt-left">メモ</th></tr></thead>
+      <tbody>
+        {% set fc = {'buy':'#2ecc71','neutral':'#95a5a6','sell':'#ff9f43'} %}
+        {% for t in recent_tags %}
+        <tr>
+          <td class="txt-left muted">{{ t.date }}</td>
+          <td class="txt-left code"><a href="/stock/{{ t.code }}">{{ t.code }}</a></td>
+          <td class="txt-left"><a href="/stock/{{ t.code }}" style="color:inherit">{{ t.name or '-' }}</a></td>
+          <td class="txt-left"><b style="color:{{ fc[t.tag] }}">{{ flow_label[t.tag] }}</b></td>
+          <td class="txt-left muted">{{ t.memo or '' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="empty">銘柄詳細ページで「大口傾向」を記録するとここに出ます</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block script %}

@@ -85,6 +85,26 @@
     </div>
   </div>
 </div>
+
+<!-- 大口傾向タグ（moomoo確認を記録） -->
+<div class="card" style="margin-bottom:14px">
+  <h2>🏷 大口傾向（moomoo確認 → ワンクリック記録）<span class="muted">チャートに ▲買 ●中立 ▼売 で表示</span></h2>
+  <div class="body">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn flow-btn" data-tag="buy" style="background:#2ecc71;color:#062;font-weight:700" onclick="tag('buy')">▲ 買い優勢</button>
+      <button class="btn flow-btn" data-tag="neutral" style="background:#95a5a6;color:#222;font-weight:700" onclick="tag('neutral')">● 中立</button>
+      <button class="btn flow-btn" data-tag="sell" style="background:#ff9f43;color:#622;font-weight:700" onclick="tag('sell')">▼ 売り優勢</button>
+      <input type="text" id="flow-memo" placeholder="メモ（任意：大口の動き等）" style="flex:1;min-width:140px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px">
+      <span class="muted" id="flow-status" style="font-size:12px"></span>
+    </div>
+    <div class="table-wrap" style="margin-top:10px;max-height:240px;overflow-y:auto">
+      <table>
+        <thead><tr><th class="txt-left">日付</th><th class="txt-left">傾向</th><th class="txt-left">メモ</th><th></th></tr></thead>
+        <tbody id="flow-history"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
 <style>.range-btn.on{background:var(--accent);border-color:var(--accent);color:#fff}</style>
 
 <div class="grid grid-2">
@@ -183,19 +203,24 @@ async function addMemo(){
   document.getElementById('memo-list').innerHTML = r.memos.map(m=>`<div class="memo-item"><div class="date">${m.date}</div>${m.text}</div>`).join('');
 }
 
-// ===== 自前ローソク足チャート（株価＋出来高＋空売り 1対1連動） =====
-let CHART = null;
+// ===== 自前ローソク足チャート（株価＋出来高＋空売り＋大口タグ 1対1連動） =====
+let CHART = null, CHART_BARS = [], CHART_SHORTS = [];
+function buildChart(marks){
+  document.getElementById('shortChartWrap').style.display = CHART_SHORTS.length ? 'block' : 'none';
+  CHART = makeStockChart(document.getElementById('mainChart'),
+                         document.getElementById('shortChart'), CHART_BARS, CHART_SHORTS, marks);
+  const on = document.querySelector('.range-btn.on');
+  CHART.setDays(on ? parseInt(on.dataset.d) : 130);
+}
 Promise.all([
   fetch('/api/price_history/'+CODE).then(r=>r.json()),
   fetch('/api/short_daily/'+CODE).then(r=>r.json()),
-]).then(([ph, sh])=>{
-  const bars = ph.filter(d=>d.open!=null && d.high!=null && d.low!=null && d.close!=null)
+  fetch('/api/flow_marks/'+CODE).then(r=>r.json()),
+]).then(([ph, sh, marks])=>{
+  CHART_BARS = ph.filter(d=>d.open!=null && d.high!=null && d.low!=null && d.close!=null)
     .map(d=>({time:d.date, open:d.open, high:d.high, low:d.low, close:d.close, volume:d.volume||0}));
-  const shorts = sh.map(d=>({time:d.date, value:d.total_ratio}));
-  document.getElementById('shortChartWrap').style.display = shorts.length ? 'block' : 'none';
-  CHART = makeStockChart(document.getElementById('mainChart'),
-                         document.getElementById('shortChart'), bars, shorts);
-  CHART.setDays(130);
+  CHART_SHORTS = sh.map(d=>({time:d.date, value:d.total_ratio}));
+  buildChart(marks);
 });
 
 document.querySelectorAll('.range-btn').forEach(b=>{
@@ -205,5 +230,35 @@ document.querySelectorAll('.range-btn').forEach(b=>{
     if(CHART) CHART.setDays(parseInt(b.dataset.d));
   };
 });
+
+// ===== 大口傾向タグ =====
+const FLOW_LABEL = {buy:'▲ 買い優勢', neutral:'● 中立', sell:'▼ 売り優勢'};
+const FLOW_COLOR = {buy:'#2ecc71', neutral:'#95a5a6', sell:'#ff9f43'};
+async function tag(t){
+  const memo = document.getElementById('flow-memo').value.trim();
+  const r = await (await fetch('/api/flow_tag/'+CODE,{method:'POST',
+    headers:{'Content-Type':'application/json'}, body:JSON.stringify({tag:t, memo})})).json();
+  document.getElementById('flow-memo').value='';
+  document.getElementById('flow-status').textContent = `記録: ${FLOW_LABEL[t]}`;
+  renderTags(r.tags); refreshMarks(r.tags);
+}
+async function delTag(date){
+  const r = await (await fetch('/api/flow_tag/'+CODE,{method:'POST',
+    headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'delete', date})})).json();
+  renderTags(r.tags); refreshMarks(r.tags);
+}
+function renderTags(tags){
+  document.getElementById('flow-history').innerHTML = tags.map(t=>`<tr>
+    <td class="txt-left muted">${t.date}</td>
+    <td class="txt-left"><b style="color:${FLOW_COLOR[t.tag]}">${FLOW_LABEL[t.tag]||t.tag}</b></td>
+    <td class="txt-left">${t.memo||''}</td>
+    <td><button class="btn btn-sm btn-ghost" onclick="delTag('${t.date}')">削除</button></td>
+  </tr>`).join('') || '<tr><td colspan="4" class="empty">まだ記録がありません</td></tr>';
+}
+function refreshMarks(tags){
+  const marks = {}; tags.forEach(t=>marks[t.date]=t.tag);
+  buildChart(marks);
+}
+renderTags({{ flow_tags|tojson }});
 </script>
 {% endblock %}

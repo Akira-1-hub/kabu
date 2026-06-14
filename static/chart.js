@@ -6,11 +6,13 @@
  株価と空売りは同じ表示インデックスを共有 → ズーム/パンが1対1で連動
  返り値: { setDays(n) }   n<=0で全期間
 */
-function makeStockChart(priceEl, shortEl, bars, shorts) {
+function makeStockChart(priceEl, shortEl, bars, shorts, marks) {
   const UP = '#ff6b6b', DOWN = '#4fc3f7';
   const GRID = '#20203a', AXIS = '#8888aa', CROSS = '#9aa0c0';
   const PADR = 56;                 // 右の価格軸ぶん
   const hasShort = shorts && shorts.length > 0;
+  const MARKS = marks || {};       // {date: 'buy'|'neutral'|'sell'}
+  const MARK_COLOR = { buy: '#2ecc71', neutral: '#95a5a6', sell: '#ff9f43' };
 
   // 空売りを各バー日付に合わせて繰り越しアライン（同じ長さの配列に）
   const shortAligned = [];
@@ -126,6 +128,23 @@ function makeStockChart(priceEl, shortEl, bars, shorts) {
       const yo = yP(bar.open), yc = yP(bar.close);
       const top = Math.min(yo, yc), bh = Math.max(1, Math.abs(yc - yo));
       ctx.fillRect(x - cw / 2, top, cw, bh);
+    }
+
+    // 大口タグのマーカー（買い=緑▲下/ 売り=橙▼上 / 中立=灰●）
+    for (let i = a; i <= b; i++) {
+      const tg = MARKS[bars[i].time]; if (!tg) continue;
+      const x = xCenter(i, plotW), col = MARK_COLOR[tg] || '#aaa';
+      ctx.fillStyle = col;
+      if (tg === 'buy') {
+        const y = yP(bars[i].low) + 10;
+        ctx.beginPath(); ctx.moveTo(x, y - 7); ctx.lineTo(x - 5, y); ctx.lineTo(x + 5, y); ctx.closePath(); ctx.fill();
+      } else if (tg === 'sell') {
+        const y = yP(bars[i].high) - 10;
+        ctx.beginPath(); ctx.moveTo(x, y + 7); ctx.lineTo(x - 5, y); ctx.lineTo(x + 5, y); ctx.closePath(); ctx.fill();
+      } else {
+        const y = yP(bars[i].high) - 10;
+        ctx.beginPath(); ctx.arc(x, y, 3.5, 0, 7); ctx.fill();
+      }
     }
 
     drawDateAxis(ctx, plotW, h, padB, !hasShort);

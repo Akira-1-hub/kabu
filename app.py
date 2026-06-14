@@ -66,6 +66,8 @@ def dashboard():
                            today_hits=db.get_hits_by_date(today),
                            watchlist=db.get_watchlist(),
                            recent_runs=db.get_recent_runs(5),
+                           recent_tags=db.recent_flow_tags(12),
+                           flow_label=db.FLOW_LABEL,
                            hit_ranking=db.get_hit_count_ranking(30)[:10])
 
 
@@ -99,7 +101,25 @@ def stock_detail(code):
                            hits=db.get_stock_hit_history(code),
                            shorts_latest=db.get_short_latest_by_institution(code),
                            short_daily=db.get_short_daily_total(code),
+                           flow_tags=db.get_flow_tags(code),
+                           flow_label=db.FLOW_LABEL,
                            memos=db.get_memos(code))
+
+
+@app.route('/api/flow_tag/<code>', methods=['POST'])
+def api_flow_tag(code):
+    d = request.json or {}
+    action = d.get('action', 'save')
+    if action == 'delete':
+        db.delete_flow_tag(code, d.get('date'))
+    else:
+        db.save_flow_tag(code, d.get('tag', ''), d.get('memo', ''))
+    return jsonify({'ok': True, 'tags': db.get_flow_tags(code)})
+
+
+@app.route('/api/flow_marks/<code>')
+def api_flow_marks(code):
+    return jsonify({t['date']: t['tag'] for t in db.get_flow_tags(code)})
 
 
 @app.route('/api/short_daily/<code>')

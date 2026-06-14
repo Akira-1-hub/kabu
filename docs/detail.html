@@ -87,6 +87,14 @@
   </div>
   <style>.rbtn.on{background:var(--accent);border-color:var(--accent);color:#fff}</style>
 
+  <div class="card" id="tag-card" style="display:none">
+    <h2>🏷 大口傾向タグ（記録）<span class="muted">チャートに ▲買 ●中立 ▼売</span></h2>
+    <div class="tw"><table>
+      <thead><tr><th class="l">日付</th><th class="l">傾向</th><th class="l">メモ</th></tr></thead>
+      <tbody id="b-tags"></tbody>
+    </table></div>
+  </div>
+
   <div class="grid2">
     <div class="card">
       <h2>📉 空売り残高（機関別・現在）</h2>
@@ -166,14 +174,26 @@ fetch(`data/${code}.json`).then(r=>{
   const bars = D.prices.filter(x=>x.o!=null&&x.h!=null&&x.l!=null&&x.c!=null)
     .map(x=>({time:x.d, open:x.o, high:x.h, low:x.l, close:x.c, volume:x.v||0}));
   const shorts = D.short.series.map(x=>({time:x.d, value:x.r}));
+  const marks = {}; (D.tags||[]).forEach(t=>marks[t.date]=t.tag);
   document.getElementById('c-short-wrap').style.display = shorts.length ? 'block' : 'none';
   const CH = makeStockChart(document.getElementById('c-main'),
-                            document.getElementById('c-short'), bars, shorts);
+                            document.getElementById('c-short'), bars, shorts, marks);
   document.querySelectorAll('.rbtn').forEach(b=>{
     b.onclick=()=>{document.querySelectorAll('.rbtn').forEach(x=>x.classList.remove('on'));
       b.classList.add('on'); CH.setDays(parseInt(b.dataset.d));};
   });
   CH.setDays(130);
+
+  // 大口タグ履歴（閲覧用）
+  const FL = {buy:'▲ 買い優勢', neutral:'● 中立', sell:'▼ 売り優勢'};
+  const FC = {buy:'#2ecc71', neutral:'#95a5a6', sell:'#ff9f43'};
+  if((D.tags||[]).length){
+    document.getElementById('tag-card').style.display='block';
+    document.getElementById('b-tags').innerHTML = D.tags.map(t=>`<tr>
+      <td class="l muted">${t.date}</td>
+      <td class="l"><b style="color:${FC[t.tag]}">${FL[t.tag]||t.tag}</b></td>
+      <td class="l">${t.memo||''}</td></tr>`).join('');
+  }
 
   // 機関別
   document.getElementById('b-inst').innerHTML = D.short.inst.map(r=>`<tr>
