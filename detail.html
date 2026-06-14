@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>銘柄詳細 - 投資DB</title>
+<script src="chart.js"></script>
+<style>
+  :root {
+    --bg:#0f0f1a; --bg2:#1a1a2e; --bg3:#252540; --text:#e0e0f0; --muted:#8888aa;
+    --border:#2a2a4a; --rise:#ff6b6b; --fall:#4fc3f7; --both:#ffd54f; --accent:#7c4dff; --accent2:#00bcd4;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:'Segoe UI','Yu Gothic UI',sans-serif;font-size:13px;line-height:1.5}
+  a{color:var(--accent2);text-decoration:none}
+  header{background:var(--bg2);border-bottom:1px solid var(--border);padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:10}
+  header h1{font-size:15px}
+  .wrap{padding:12px;max-width:1100px;margin:0 auto}
+  .card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:14px}
+  .card h2{font-size:13px;color:var(--muted);padding:9px 12px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;justify-content:space-between}
+  .card .body{padding:12px}
+  .price-line{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+  .price-line .px{font-size:30px;font-weight:700}
+  .kv{display:flex;gap:8px 26px;flex-wrap:wrap;margin-top:10px;font-size:13px}
+  .kv span.k{color:var(--muted)}
+  .tw{overflow-x:auto;max-height:420px;overflow-y:auto}
+  table{width:100%;border-collapse:collapse}
+  thead th{background:var(--bg3);color:var(--muted);font-size:11px;font-weight:600;padding:7px 9px;text-align:right;white-space:nowrap;position:sticky;top:0}
+  thead th.l{text-align:left}
+  tbody td{padding:6px 9px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border)}
+  tbody td.l{text-align:left}
+  tbody tr:hover{background:var(--bg3)}
+  .rise{color:var(--rise)} .fall{color:var(--fall)}
+  .muted{color:var(--muted)}
+  .empty{text-align:center;padding:28px;color:var(--muted)}
+  .desc{font-size:12.5px;line-height:1.7;color:#bbbbd5;border-top:1px solid var(--border);padding-top:8px;margin-top:8px}
+  .btn{background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:700px){.grid2{grid-template-columns:1fr}.hide-sp{display:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <a href="index.html" class="btn">← 一覧へ</a>
+  <h1 id="title">読み込み中...</h1>
+  <span style="margin-left:auto"></span>
+  <a id="kabutan" class="btn" target="_blank">kabutan↗</a>
+</header>
+
+<div class="wrap">
+
+  <div class="card"><div class="body">
+    <div class="price-line">
+      <span class="px" id="px">-</span>
+      <span id="chg" style="font-size:16px"></span>
+      <span class="muted" id="pdate"></span>
+    </div>
+    <div class="kv" id="kv"></div>
+  </div></div>
+
+  <div class="card" id="fund-card" style="display:none">
+    <h2>🏢 企業情報 <span class="muted" id="fund-upd"></span></h2>
+    <div class="body">
+      <div class="kv" id="fund-kv" style="margin-top:0"></div>
+      <div class="desc" id="fund-desc" style="display:none"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📈 株価・出来高・空売り残高
+      <span style="display:flex;gap:4px">
+        <button class="btn rbtn" data-d="22">1M</button>
+        <button class="btn rbtn" data-d="66">3M</button>
+        <button class="btn rbtn on" data-d="130">6M</button>
+        <button class="btn rbtn" data-d="250">1Y</button>
+        <button class="btn rbtn" data-d="0">全部</button>
+      </span>
+    </h2>
+    <div class="body">
+      <div id="c-main"></div>
+      <div id="c-short-wrap" style="display:none">
+        <div class="muted" style="font-size:11px;margin-top:12px">空売り残高合計（%）</div>
+        <div id="c-short"></div>
+      </div>
+    </div>
+  </div>
+  <style>.rbtn.on{background:var(--accent);border-color:var(--accent);color:#fff}</style>
+
+  <div class="card" id="tag-card" style="display:none">
+    <h2>🏷 大口傾向タグ（記録）<span class="muted">チャートに ▲買 ●中立 ▼売</span></h2>
+    <div class="tw"><table>
+      <thead><tr><th class="l">日付</th><th class="l">傾向</th><th class="l">メモ</th></tr></thead>
+      <tbody id="b-tags"></tbody>
+    </table></div>
+  </div>
+
+  <div class="card" id="cost-card" style="display:none;border-color:#5a3a2a">
+    <h2>💰 機関の推定建単価（空売り増 × その日の株価で逆算）<span class="muted" id="cost-cur"></span></h2>
+    <div id="cost-agg" style="padding:8px 12px;background:rgba(255,159,67,.08);font-size:13px"></div>
+    <div class="tw"><table>
+      <thead><tr><th class="l">機関</th><th>残高%</th><th>安値建</th><th>中央建</th><th>高値建</th><th>現在vs中央</th></tr></thead>
+      <tbody id="b-cost"></tbody>
+    </table></div>
+    <div class="muted" style="font-size:11px;padding:6px 12px">※現在株価が建単価より上（＋）＝機関は含み損＝踏み上げ圧力。チャートのオレンジ帯が建単価。</div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>📉 空売り残高（機関別・現在）</h2>
+      <div class="tw"><table>
+        <thead><tr><th class="l">機関</th><th>残高%</th><th class="hide-sp">株数</th><th>直近増減</th></tr></thead>
+        <tbody id="b-inst"></tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <h2>🎯 条件ヒット履歴</h2>
+      <div class="tw"><table>
+        <thead><tr><th class="l">日付</th><th class="l">条件</th><th>値</th></tr></thead>
+        <tbody id="b-hits"></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📅 株価履歴（直近90日）</h2>
+    <div class="tw"><table>
+      <thead><tr><th class="l">日付</th><th>始値</th><th class="hide-sp">高値</th><th class="hide-sp">安値</th><th>終値</th><th>前日比%</th><th class="hide-sp">出来高</th><th>倍率</th></tr></thead>
+      <tbody id="b-hist"></tbody>
+    </table></div>
+  </div>
+
+</div>
+
+<script>
+const code = new URLSearchParams(location.search).get('code') || '';
+const fmtN = n => n==null?'-':Number(n).toLocaleString();
+const fmtP = n => n==null?'-':(n>=0?'+':'')+Number(n).toFixed(2)+'%';
+const cls  = n => n==null?'':(n>0?'rise':(n<0?'fall':''));
+
+document.getElementById('kabutan').href = `https://kabutan.jp/stock/?code=${code}`;
+
+fetch(`data/${code}.json`).then(r=>{
+  if(!r.ok) throw new Error('no data');
+  return r.json();
+}).then(D=>{
+  document.title = `${D.code} ${D.name} - 投資DB`;
+  document.getElementById('title').textContent = `${D.code} ${D.name}`;
+
+  // 価格ヘッダ
+  const last = D.prices[D.prices.length-1];
+  if(last){
+    document.getElementById('px').textContent = fmtN(last.c);
+    document.getElementById('px').className = 'px ' + cls(last.pct);
+    document.getElementById('chg').innerHTML = `<span class="${cls(last.pct)}">${fmtP(last.pct)}</span>`;
+    document.getElementById('pdate').textContent = last.d;
+    document.getElementById('kv').innerHTML = `
+      <span><span class="k">市場</span> ${D.market||'-'}</span>
+      <span><span class="k">業種</span> ${D.sector||'-'}</span>
+      <span><span class="k">出来高</span> ${fmtN(last.v)}</span>
+      <span><span class="k">出来高倍率</span> ${last.vr!=null?last.vr.toFixed(1)+'x':'-'}</span>`;
+  }
+
+  // 企業情報
+  if(D.fund){
+    const f = D.fund;
+    document.getElementById('fund-card').style.display='block';
+    document.getElementById('fund-upd').textContent = f.updated ? '取得 '+f.updated : '';
+    const cap = f.market_cap_oku==null ? '-' :
+      (f.market_cap_oku>=10000 ? (f.market_cap_oku/10000).toFixed(2)+'兆円' : Math.round(f.market_cap_oku).toLocaleString()+'億円');
+    document.getElementById('fund-kv').innerHTML = `
+      <span><span class="k">時価総額</span> <b>${cap}</b></span>
+      <span><span class="k">予想PER</span> <b>${f.per!=null?f.per.toFixed(1)+'倍':'-'}</b></span>
+      <span><span class="k">PBR</span> <b>${f.pbr!=null?f.pbr.toFixed(2)+'倍':'-'}</b></span>
+      <span><span class="k">予想EPS</span> <b>${f.eps!=null?f.eps.toFixed(1)+'円':'-'}</b></span>
+      <span><span class="k">利回り</span> <b>${f.dividend_yield!=null?f.dividend_yield.toFixed(2)+'%':'-'}</b></span>`;
+    if(f.description){
+      const el = document.getElementById('fund-desc');
+      el.style.display='block'; el.textContent = f.description;
+    }
+  }
+
+  // 自前ローソク足チャート（株価＋出来高＋空売り 1対1連動）
+  const bars = D.prices.filter(x=>x.o!=null&&x.h!=null&&x.l!=null&&x.c!=null)
+    .map(x=>({time:x.d, open:x.o, high:x.h, low:x.l, close:x.c, volume:x.v||0}));
+  const shorts = D.short.series.map(x=>({time:x.d, value:x.r}));
+  const marks = {}; (D.tags||[]).forEach(t=>marks[t.date]=t.tag);
+  const ag = (D.cost && D.cost.agg) ? D.cost.agg : null;
+  const band = ag ? {low:ag.avg_low, mid:ag.avg_mid, high:ag.avg_high} : null;
+  document.getElementById('c-short-wrap').style.display = shorts.length ? 'block' : 'none';
+  const CH = makeStockChart(document.getElementById('c-main'),
+                            document.getElementById('c-short'), bars, shorts, marks, band);
+  document.querySelectorAll('.rbtn').forEach(b=>{
+    b.onclick=()=>{document.querySelectorAll('.rbtn').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on'); CH.setDays(parseInt(b.dataset.d));};
+  });
+  CH.setDays(130);
+
+  // 推定建単価（閲覧用）
+  if(D.cost && D.cost.rows && D.cost.rows.length){
+    document.getElementById('cost-card').style.display='block';
+    document.getElementById('cost-cur').textContent = `現在 ${Math.round(D.cost.close).toLocaleString()}`;
+    const sgn = v => (v>=0?'+':'')+v.toFixed(1)+'%';
+    if(ag){
+      document.getElementById('cost-agg').innerHTML =
+        `<b>全機関加重平均</b>　安値建 ${Math.round(ag.avg_low)} ／ 中央建 <b>${Math.round(ag.avg_mid)}</b> ／ 高値建 ${Math.round(ag.avg_high)}　`+
+        `<span class="${ag.gap_mid>0?'rise':'fall'}"><b>現在 ${sgn(ag.gap_mid)}</b></span> <span class="muted">（＋＝機関が含み損）</span>`;
+    }
+    document.getElementById('b-cost').innerHTML = D.cost.rows.map(r=>`<tr>
+      <td class="l">${r.institution}</td><td>${r.ratio.toFixed(1)}%</td>
+      <td class="muted">${Math.round(r.avg_low).toLocaleString()}</td>
+      <td><b>${Math.round(r.avg_mid).toLocaleString()}</b></td>
+      <td class="muted">${Math.round(r.avg_high).toLocaleString()}</td>
+      <td class="${r.gap_mid>0?'rise':'fall'}"><b>${sgn(r.gap_mid)}</b></td></tr>`).join('');
+  }
+
+  // 大口タグ履歴（閲覧用）
+  const FL = {buy:'▲ 買い優勢', neutral:'● 中立', sell:'▼ 売り優勢'};
+  const FC = {buy:'#2ecc71', neutral:'#95a5a6', sell:'#ff9f43'};
+  if((D.tags||[]).length){
+    document.getElementById('tag-card').style.display='block';
+    document.getElementById('b-tags').innerHTML = D.tags.map(t=>`<tr>
+      <td class="l muted">${t.date}</td>
+      <td class="l"><b style="color:${FC[t.tag]}">${FL[t.tag]||t.tag}</b></td>
+      <td class="l">${t.memo||''}</td></tr>`).join('');
+  }
+
+  // 機関別
+  document.getElementById('b-inst').innerHTML = D.short.inst.map(r=>`<tr>
+    <td class="l">${r.institution}</td>
+    <td><b>${r.ratio.toFixed(2)}%</b></td>
+    <td class="hide-sp">${fmtN(r.shares)}</td>
+    <td class="${r.chg>0?'rise':(r.chg<0?'fall':'')}">${r.chg!=null?(r.chg>=0?'+':'')+fmtN(r.chg):'-'}</td>
+  </tr>`).join('') || '<tr><td colspan="4" class="empty">空売り報告なし（残高0.5%未満）</td></tr>';
+
+  // ヒット履歴
+  document.getElementById('b-hits').innerHTML = D.hits.map(h=>`<tr>
+    <td class="l muted">${h.d}</td><td class="l">${h.c}</td><td>${h.t}</td>
+  </tr>`).join('') || '<tr><td colspan="3" class="empty">記録なし</td></tr>';
+
+  // 株価履歴（新しい順）
+  document.getElementById('b-hist').innerHTML = [...D.prices].reverse().map(p=>`<tr>
+    <td class="l muted">${p.d}</td><td>${fmtN(p.o)}</td>
+    <td class="hide-sp">${fmtN(p.h)}</td><td class="hide-sp">${fmtN(p.l)}</td>
+    <td>${fmtN(p.c)}</td><td class="${cls(p.pct)}">${fmtP(p.pct)}</td>
+    <td class="hide-sp">${fmtN(p.v)}</td><td>${p.vr!=null?p.vr.toFixed(1)+'x':'-'}</td>
+  </tr>`).join('') || '<tr><td colspan="8" class="empty">株価データなし</td></tr>';
+
+}).catch(e=>{
+  document.getElementById('title').textContent = `${code} - データなし`;
+  document.querySelector('.wrap').innerHTML =
+    `<div class="card"><div class="empty">この銘柄の公開データがありません。<br>
+     <a href="https://kabutan.jp/stock/?code=${code}" target="_blank">kabutanで見る↗</a></div></div>`;
+});
+</script>
+</body>
+</html>

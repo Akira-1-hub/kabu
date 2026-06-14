@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>投資DB - 閲覧用</title>
+<style>
+  :root {
+    --bg:#0f0f1a; --bg2:#1a1a2e; --bg3:#252540; --text:#e0e0f0; --muted:#8888aa;
+    --border:#2a2a4a; --rise:#ff6b6b; --fall:#4fc3f7; --both:#ffd54f; --accent:#7c4dff; --accent2:#00bcd4;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:'Segoe UI','Yu Gothic UI',sans-serif;font-size:13px;line-height:1.5}
+  a{color:var(--accent2);text-decoration:none}
+  header{background:var(--bg2);border-bottom:1px solid var(--border);padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:0;z-index:10}
+  header h1{font-size:15px}
+  header .upd{color:var(--muted);font-size:11px;margin-left:auto}
+  .tabs{display:flex;gap:6px;padding:10px 14px;flex-wrap:wrap;background:var(--bg2);border-bottom:1px solid var(--border)}
+  .tabs button{background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 14px;cursor:pointer;font-size:13px}
+  .tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .wrap{padding:12px;max-width:1300px;margin:0 auto}
+  .panel{display:none}
+  .panel.on{display:block}
+  .filters{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px}
+  .filters label{color:var(--muted);font-size:12px}
+  .filters input,.filters select{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-size:12px}
+  .filters input[type=number]{width:64px}
+  .card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:14px}
+  .card h2{font-size:13px;color:var(--muted);padding:9px 12px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;justify-content:space-between}
+  .tw{overflow-x:auto;max-height:520px;overflow-y:auto}
+  table{width:100%;border-collapse:collapse;min-width:520px}
+  thead th{background:var(--bg3);color:var(--muted);font-size:11px;font-weight:600;padding:7px 9px;text-align:right;cursor:pointer;white-space:nowrap;position:sticky;top:0}
+  thead th.l{text-align:left}
+  tbody td{padding:6px 9px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border)}
+  tbody td.l{text-align:left}
+  tbody tr:hover{background:var(--bg3)}
+  .rise{color:var(--rise)} .fall{color:var(--fall)} .both{color:var(--both);font-weight:700}
+  .badge{font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(124,77,255,.2);color:#b39dff}
+  .empty{text-align:center;padding:36px;color:var(--muted)}
+  .muted{color:var(--muted)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .cnt{color:var(--muted);font-size:12px;margin-left:auto}
+  @media(max-width:700px){.grid2{grid-template-columns:1fr}.hide-sp{display:none}table{min-width:430px}}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📈 投資DB <span class="muted" style="font-size:11px">閲覧用</span></h1>
+  <span class="upd" id="updated">読み込み中...</span>
+</header>
+
+<div class="tabs">
+  <button class="on" data-p="screen">スクリーニング</button>
+  <button data-p="short">空売り</button>
+  <button data-p="hits">継続出現</button>
+</div>
+
+<div class="wrap">
+
+  <!-- スクリーニング -->
+  <div class="panel on" id="p-screen">
+    <div class="filters" id="stats" style="gap:8px 22px">
+      <span class="muted">読み込み中...</span>
+    </div>
+    <div class="filters">
+      <label>前日比±</label><input type="number" id="f-pct" value="3" step="0.5" oninput="renderScreen()">
+      <label>%以上</label>
+      <label>出来高</label><input type="number" id="f-ratio" value="2" step="0.5" oninput="renderScreen()">
+      <label>倍以上</label>
+      <select id="f-mode" onchange="renderScreen()">
+        <option value="both">両条件一致</option><option value="any">どちらか</option><option value="none">全件</option>
+      </select>
+      <input type="text" id="f-kw" placeholder="コード/銘柄名" oninput="renderScreen()" style="width:130px">
+      <span class="cnt" id="f-cnt"></span>
+    </div>
+    <div class="card">
+      <div class="tw">
+        <table>
+          <thead><tr>
+            <th class="l" onclick="sortScreen('code')">コード</th><th class="l" onclick="sortScreen('name')">銘柄名</th>
+            <th onclick="sortScreen('close')">終値</th><th onclick="sortScreen('pct')">前日比%</th>
+            <th class="hide-sp" onclick="sortScreen('vol')">出来高</th><th onclick="sortScreen('ratio')">倍率</th>
+          </tr></thead>
+          <tbody id="b-screen"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 空売り -->
+  <div class="panel" id="p-short">
+    <div class="filters">
+      <label>期間</label>
+      <select id="s-period" onchange="renderShort()">
+        <option value="daily">デイリー（前日比）</option>
+        <option value="weekly">週間（1週間前比）</option>
+        <option value="thisweek">今週（週初比）</option>
+      </select>
+      <span class="cnt" id="s-range"></span>
+    </div>
+    <div class="card" style="border-color:#5a3a2a">
+      <h2 style="background:linear-gradient(90deg,rgba(255,107,107,.15),var(--bg3))">🔥 踏み上げ警戒（空売り増加 × 株価上昇）<span class="cnt" id="sq-cnt"></span></h2>
+      <div class="tw"><table>
+        <thead><tr><th class="l">コード</th><th class="l">銘柄名</th><th>踏み上げ度</th><th>空売り増</th><th>残高%</th><th>期間騰落</th><th class="hide-sp">続伸</th><th class="hide-sp">機関</th></tr></thead>
+        <tbody id="b-sq"></tbody></table></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><h2>🔼 空売り増加</h2><div class="tw"><table>
+        <thead><tr><th class="l">コード</th><th class="l">銘柄名</th><th>残高%</th><th class="hide-sp">前回%</th><th>増減</th></tr></thead>
+        <tbody id="b-inc"></tbody></table></div></div>
+      <div class="card"><h2>🔽 空売り減少（買い戻し）</h2><div class="tw"><table>
+        <thead><tr><th class="l">コード</th><th class="l">銘柄名</th><th>残高%</th><th class="hide-sp">前回%</th><th>増減</th></tr></thead>
+        <tbody id="b-dec"></tbody></table></div></div>
+    </div>
+    <div class="card"><h2>🆕 新規空売り</h2><div class="tw"><table>
+      <thead><tr><th class="l">コード</th><th class="l">銘柄名</th><th class="l">機関</th><th>残高%</th><th class="hide-sp">建玉日</th></tr></thead>
+      <tbody id="b-new"></tbody></table></div></div>
+    <div class="card"><h2>🏔 残高割合トップ</h2><div class="tw"><table>
+      <thead><tr><th class="l">コード</th><th class="l">銘柄名</th><th>残高%</th><th class="hide-sp">株数</th><th>機関数</th></tr></thead>
+      <tbody id="b-top"></tbody></table></div></div>
+  </div>
+
+  <!-- 継続出現 -->
+  <div class="panel" id="p-hits">
+    <div class="card"><h2>🔁 継続出現ランキング（直近30日に条件ヒットした回数）</h2><div class="tw"><table>
+      <thead><tr><th class="l">コード</th><th class="l">銘柄名</th><th>回数</th><th class="hide-sp">最終</th></tr></thead>
+      <tbody id="b-hits"></tbody></table></div></div>
+  </div>
+
+</div>
+
+<script>
+let D = null;
+let sKey='pct', sDesc=true;
+
+const fmtN = n => n==null?'-':Number(n).toLocaleString();
+const fmtP = n => n==null?'-':(n>=0?'+':'')+Number(n).toFixed(2)+'%';
+const cls  = n => n==null?'':(n>0?'rise':(n<0?'fall':''));
+const lk   = (c,t) => `<a href="detail.html?code=${c}" style="color:inherit">${t}</a>`;
+
+fetch('data.json').then(r=>r.json()).then(d=>{
+  D = d;
+  document.getElementById('updated').textContent = '更新: ' + d.updated;
+  const up3 = d.prices.filter(p=>(p.pct||0)>=3).length;
+  const dn3 = d.prices.filter(p=>(p.pct||0)<=-3).length;
+  const v2  = d.prices.filter(p=>(p.ratio||0)>=2).length;
+  document.getElementById('stats').innerHTML = `
+    <span><span class="muted">収集</span> <b>${d.prices.length.toLocaleString()}</b>銘柄</span>
+    <span><span class="muted">+3%↑</span> <b class="rise">${up3}</b></span>
+    <span><span class="muted">-3%↓</span> <b class="fall">${dn3}</b></span>
+    <span><span class="muted">出来高2x↑</span> <b class="both">${v2}</b></span>
+    <span><span class="muted">空売り最新</span> <b>${d.short.latest||'-'}</b></span>`;
+  renderScreen(); renderShort(); renderHits();
+}).catch(e=>{
+  document.getElementById('updated').textContent = 'data.json が読めません';
+});
+
+// タブ
+document.querySelectorAll('.tabs button').forEach(b=>{
+  b.onclick = ()=>{
+    document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('.panel').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    document.getElementById('p-'+b.dataset.p).classList.add('on');
+  };
+});
+
+function renderScreen(){
+  if(!D) return;
+  const pct = parseFloat(document.getElementById('f-pct').value);
+  const ratio = parseFloat(document.getElementById('f-ratio').value);
+  const mode = document.getElementById('f-mode').value;
+  const kw = document.getElementById('f-kw').value.trim();
+
+  let rows = D.prices.filter(d=>{
+    if(kw && !((d.code||'').includes(kw)||(d.name||'').includes(kw))) return false;
+    const hp = Math.abs(d.pct||0) >= (isNaN(pct)?0:pct);
+    const hr = (d.ratio||0) >= (isNaN(ratio)?0:ratio);
+    return mode==='both' ? (hp&&hr) : mode==='any' ? (hp||hr) : true;
+  });
+  document.getElementById('f-cnt').textContent = `${rows.length}件 / 全${D.prices.length}件`;
+
+  rows.sort((a,b)=>{
+    let av=a[sKey], bv=b[sKey];
+    if(typeof av==='string') return sDesc?(bv||'').localeCompare(av):(av||'').localeCompare(bv);
+    av=av??-1e18; bv=bv??-1e18;
+    return sDesc?bv-av:av-bv;
+  });
+
+  document.getElementById('b-screen').innerHTML = rows.slice(0,300).map(d=>`<tr>
+    <td class="l muted">${lk(d.code,d.code)}</td>
+    <td class="l">${lk(d.code,d.name||'-')}</td>
+    <td>${fmtN(d.close)}</td>
+    <td class="${cls(d.pct)}">${fmtP(d.pct)}</td>
+    <td class="hide-sp">${fmtN(d.vol)}</td>
+    <td>${d.ratio!=null?d.ratio.toFixed(1)+'x':'-'}</td>
+  </tr>`).join('') || '<tr><td colspan="6" class="empty">該当なし</td></tr>';
+}
+function sortScreen(k){ if(sKey===k)sDesc=!sDesc; else{sKey=k;sDesc=true;} renderScreen(); }
+
+function renderShort(){
+  if(!D) return;
+  const p = document.getElementById('s-period').value;
+  const S = D.short[p];
+  document.getElementById('s-range').textContent = `基準 ${S.from} → 最新 ${D.short.latest}`;
+
+  // 踏み上げ警戒
+  const sq = S.squeeze || [];
+  document.getElementById('sq-cnt').textContent = `${sq.length}件 / 株価${S.price_latest||'-'}`;
+  document.getElementById('b-sq').innerHTML = sq.map(r=>`<tr>
+    <td class="l muted">${lk(r.code,r.code)}</td><td class="l">${lk(r.code,r.name||'-')}</td>
+    <td><b class="both" style="font-size:14px">${r.score}</b></td>
+    <td class="rise">+${r.short_delta.toFixed(2)}pt</td>
+    <td><b>${r.cur_ratio.toFixed(1)}%</b></td>
+    <td class="rise"><b>+${r.price_gain.toFixed(1)}%</b></td>
+    <td class="hide-sp muted">${r.up_days}日</td>
+    <td class="hide-sp muted">${r.inst}</td>
+  </tr>`).join('') || '<tr><td colspan="8" class="empty">該当なし</td></tr>';
+
+  const chg = (rows,c) => rows.map(r=>`<tr>
+    <td class="l muted">${lk(r.code,r.code)}</td><td class="l">${lk(r.code,r.name||'-')}</td>
+    <td><b>${r.cur_ratio.toFixed(2)}%</b></td><td class="hide-sp muted">${r.past_ratio.toFixed(2)}%</td>
+    <td class="${c}">${(r.delta_ratio>=0?'+':'')+r.delta_ratio.toFixed(2)}pt</td>
+  </tr>`).join('') || '<tr><td colspan="5" class="empty">なし</td></tr>';
+
+  document.getElementById('b-inc').innerHTML = chg(S.increase,'rise');
+  document.getElementById('b-dec').innerHTML = chg(S.decrease,'fall');
+
+  document.getElementById('b-new').innerHTML = S.new.map(r=>`<tr>
+    <td class="l muted">${lk(r.code,r.code)}</td><td class="l">${lk(r.code,r.name||'-')}</td>
+    <td class="l">${r.institution}</td><td><b class="rise">${r.ratio.toFixed(2)}%</b></td>
+    <td class="hide-sp muted">${r.date}</td>
+  </tr>`).join('') || '<tr><td colspan="5" class="empty">なし</td></tr>';
+
+  document.getElementById('b-top').innerHTML = D.short.top.map(r=>`<tr>
+    <td class="l muted">${lk(r.code,r.code)}</td><td class="l">${lk(r.code,r.name||'-')}</td>
+    <td><b class="rise">${r.total_ratio.toFixed(2)}%</b></td>
+    <td class="hide-sp">${fmtN(r.total_shares)}</td><td>${r.inst}</td>
+  </tr>`).join('');
+}
+
+function renderHits(){
+  if(!D) return;
+  document.getElementById('b-hits').innerHTML = D.hits30.map(r=>`<tr>
+    <td class="l muted">${lk(r.code,r.code)}</td><td class="l">${lk(r.code,r.name||'-')}</td>
+    <td><span class="badge">${r.hit_count}回</span></td><td class="hide-sp muted">${r.last_date}</td>
+  </tr>`).join('') || '<tr><td colspan="4" class="empty">なし</td></tr>';
+}
+</script>
+</body>
+</html>
