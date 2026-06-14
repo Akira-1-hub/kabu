@@ -147,6 +147,57 @@
   </div>
 </div>
 
+<!-- 推定建単価（空売り×OHLCで逆算） -->
+{% if cost_basis.rows %}
+{% set agg = cost_basis.agg %}
+<div class="card" style="margin-bottom:14px">
+  <h2>💰 機関の推定建単価（空売り増加 × その日の株価で逆算）
+    <span class="muted">現在 {{ '{:,.0f}'.format(cost_basis.close) }}（{{ cost_basis.latest }}）</span>
+  </h2>
+  <div class="body">
+    {% if agg %}
+    <div style="display:flex;gap:10px 26px;flex-wrap:wrap;align-items:center;margin-bottom:10px;
+                padding:8px 12px;background:rgba(255,159,67,.08);border:1px solid #5a3a2a;border-radius:8px">
+      <div><b>全機関 加重平均</b></div>
+      <div><span class="muted">安値建</span> {{ '{:,.0f}'.format(agg.avg_low) }}</div>
+      <div><span class="muted">中央建</span> <b>{{ '{:,.0f}'.format(agg.avg_mid) }}</b></div>
+      <div><span class="muted">高値建</span> {{ '{:,.0f}'.format(agg.avg_high) }}</div>
+      <div style="margin-left:auto">
+        <span class="muted">現在 vs 中央建</span>
+        <b class="{{ 'rise' if (agg.gap_mid or 0)>0 else 'fall' }}" style="font-size:15px">
+          {{ '{:+.1f}%'.format(agg.gap_mid) }}</b>
+        <span class="muted" style="font-size:11px">（＋＝機関が含み損＝踏み上げ圧力）</span>
+      </div>
+    </div>
+    {% endif %}
+    <div class="table-wrap" style="max-height:300px;overflow-y:auto">
+      <table>
+        <thead><tr>
+          <th class="txt-left">機関</th><th>残高%</th>
+          <th>安値建</th><th>中央建</th><th>高値建</th><th>現在vs中央</th>
+        </tr></thead>
+        <tbody>
+          {% for r in cost_basis.rows %}
+          <tr>
+            <td class="txt-left">{{ r.institution }}</td>
+            <td>{{ '{:.1f}%'.format(r.ratio) }}</td>
+            <td class="muted">{{ '{:,.0f}'.format(r.avg_low) }}</td>
+            <td><b>{{ '{:,.0f}'.format(r.avg_mid) }}</b></td>
+            <td class="muted">{{ '{:,.0f}'.format(r.avg_high) }}</td>
+            <td class="{{ 'rise' if (r.gap_mid or 0)>0 else 'fall' }}"><b>{{ '{:+.1f}%'.format(r.gap_mid) }}</b></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:6px">
+      ※各機関が売り増した株数を、その日の安値/中央(高安平均)/高値で値付けした加重平均（推定）。
+      現在株価が建単価より上（＋）＝機関は含み損＝買い戻し（踏み上げ）圧力。チャートにオレンジ帯で表示。
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <!-- メモ -->
 <div class="card" style="margin-top:14px">
   <h2>📝 メモ</h2>
@@ -204,11 +255,11 @@ async function addMemo(){
 }
 
 // ===== 自前ローソク足チャート（株価＋出来高＋空売り＋大口タグ 1対1連動） =====
-let CHART = null, CHART_BARS = [], CHART_SHORTS = [];
+let CHART = null, CHART_BARS = [], CHART_SHORTS = [], COST_BAND = null;
 function buildChart(marks){
   document.getElementById('shortChartWrap').style.display = CHART_SHORTS.length ? 'block' : 'none';
   CHART = makeStockChart(document.getElementById('mainChart'),
-                         document.getElementById('shortChart'), CHART_BARS, CHART_SHORTS, marks);
+                         document.getElementById('shortChart'), CHART_BARS, CHART_SHORTS, marks, COST_BAND);
   const on = document.querySelector('.range-btn.on');
   CHART.setDays(on ? parseInt(on.dataset.d) : 130);
 }
@@ -216,10 +267,12 @@ Promise.all([
   fetch('/api/price_history/'+CODE).then(r=>r.json()),
   fetch('/api/short_daily/'+CODE).then(r=>r.json()),
   fetch('/api/flow_marks/'+CODE).then(r=>r.json()),
-]).then(([ph, sh, marks])=>{
+  fetch('/api/cost_band/'+CODE).then(r=>r.json()),
+]).then(([ph, sh, marks, band])=>{
   CHART_BARS = ph.filter(d=>d.open!=null && d.high!=null && d.low!=null && d.close!=null)
     .map(d=>({time:d.date, open:d.open, high:d.high, low:d.low, close:d.close, volume:d.volume||0}));
   CHART_SHORTS = sh.map(d=>({time:d.date, value:d.total_ratio}));
+  COST_BAND = band && band.avg_mid ? {low:band.avg_low, mid:band.avg_mid, high:band.avg_high} : null;
   buildChart(marks);
 });
 

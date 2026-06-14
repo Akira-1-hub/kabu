@@ -95,6 +95,16 @@
     </table></div>
   </div>
 
+  <div class="card" id="cost-card" style="display:none;border-color:#5a3a2a">
+    <h2>💰 機関の推定建単価（空売り増 × その日の株価で逆算）<span class="muted" id="cost-cur"></span></h2>
+    <div id="cost-agg" style="padding:8px 12px;background:rgba(255,159,67,.08);font-size:13px"></div>
+    <div class="tw"><table>
+      <thead><tr><th class="l">機関</th><th>残高%</th><th>安値建</th><th>中央建</th><th>高値建</th><th>現在vs中央</th></tr></thead>
+      <tbody id="b-cost"></tbody>
+    </table></div>
+    <div class="muted" style="font-size:11px;padding:6px 12px">※現在株価が建単価より上（＋）＝機関は含み損＝踏み上げ圧力。チャートのオレンジ帯が建単価。</div>
+  </div>
+
   <div class="grid2">
     <div class="card">
       <h2>📉 空売り残高（機関別・現在）</h2>
@@ -175,14 +185,34 @@ fetch(`data/${code}.json`).then(r=>{
     .map(x=>({time:x.d, open:x.o, high:x.h, low:x.l, close:x.c, volume:x.v||0}));
   const shorts = D.short.series.map(x=>({time:x.d, value:x.r}));
   const marks = {}; (D.tags||[]).forEach(t=>marks[t.date]=t.tag);
+  const ag = (D.cost && D.cost.agg) ? D.cost.agg : null;
+  const band = ag ? {low:ag.avg_low, mid:ag.avg_mid, high:ag.avg_high} : null;
   document.getElementById('c-short-wrap').style.display = shorts.length ? 'block' : 'none';
   const CH = makeStockChart(document.getElementById('c-main'),
-                            document.getElementById('c-short'), bars, shorts, marks);
+                            document.getElementById('c-short'), bars, shorts, marks, band);
   document.querySelectorAll('.rbtn').forEach(b=>{
     b.onclick=()=>{document.querySelectorAll('.rbtn').forEach(x=>x.classList.remove('on'));
       b.classList.add('on'); CH.setDays(parseInt(b.dataset.d));};
   });
   CH.setDays(130);
+
+  // 推定建単価（閲覧用）
+  if(D.cost && D.cost.rows && D.cost.rows.length){
+    document.getElementById('cost-card').style.display='block';
+    document.getElementById('cost-cur').textContent = `現在 ${Math.round(D.cost.close).toLocaleString()}`;
+    const sgn = v => (v>=0?'+':'')+v.toFixed(1)+'%';
+    if(ag){
+      document.getElementById('cost-agg').innerHTML =
+        `<b>全機関加重平均</b>　安値建 ${Math.round(ag.avg_low)} ／ 中央建 <b>${Math.round(ag.avg_mid)}</b> ／ 高値建 ${Math.round(ag.avg_high)}　`+
+        `<span class="${ag.gap_mid>0?'rise':'fall'}"><b>現在 ${sgn(ag.gap_mid)}</b></span> <span class="muted">（＋＝機関が含み損）</span>`;
+    }
+    document.getElementById('b-cost').innerHTML = D.cost.rows.map(r=>`<tr>
+      <td class="l">${r.institution}</td><td>${r.ratio.toFixed(1)}%</td>
+      <td class="muted">${Math.round(r.avg_low).toLocaleString()}</td>
+      <td><b>${Math.round(r.avg_mid).toLocaleString()}</b></td>
+      <td class="muted">${Math.round(r.avg_high).toLocaleString()}</td>
+      <td class="${r.gap_mid>0?'rise':'fall'}"><b>${sgn(r.gap_mid)}</b></td></tr>`).join('');
+  }
 
   // 大口タグ履歴（閲覧用）
   const FL = {buy:'▲ 買い優勢', neutral:'● 中立', sell:'▼ 売り優勢'};

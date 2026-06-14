@@ -681,6 +681,94 @@ def squeeze_ranking(period='weekly', limit=50, weights=None):
             'from': rank['from'], 'price_latest': price_latest}
 
 
+def short_cost_basis(code):
+    """各機関の推定建単価（安値/中央/高値の3パターン）＋現在株価との乖離"""
+    conn = get_conn()
+    price_rows = conn.execute(
+        'SELECT date,high,low,close FROM daily_prices WHERE code=?', (code,)).fetchall()
+    short_rows = conn.execute(
+        'SELECT date,institution,shares,ratio FROM short_selling WHERE code=? ORDER BY institution,date',
+        (code,)).fetchall()
+    conn.close()
+    return compute_cost_basis(price_rows, short_rows)
+
+
+def compute_cost_basis(price_rows, short_rows):
+    """建玉(売り増し)を日ごとにその日のOHLCで値付けして加重平均（純関数）
+    返り値: {'rows':[...], 'agg':{...}, 'close':現在終値, 'latest':日付}
+    """
+    prices = {r['date']: r for r in price_rows}
+    srows = short_rows
+    if not prices or not srows:
+        return {'rows': [], 'agg': None, 'close': None, 'latest': None}
+
+    latest = max(prices)
+    close = prices[latest]['close']
+
+    # 機関ごとに集計
+    by_inst = {}
+    for r in srows:
+        by_inst.setdefault(r['institution'], []).append(r)
+
+    def price_at(d):
+        p = prices.get(d)
+        if not p or p['high'] is None or p['low'] is None:
+            return None
+        return p['low'], (p['high'] + p['low']) / 2, p['high']
+
+    rows = []
+    for inst, recs in by_inst.items():
+        recs.sort(key=lambda x: x['date'])
+        cur_shares = recs[-1]['shares'] or 0
+        cur_ratio = recs[-1]['ratio'] or 0
+        if cur_ratio < SHORT_THRESHOLD:        # 現在アクティブな機関のみ
+            continue
+        prev = 0
+        qty = 0.0
+        s_low = s_mid = s_high = 0.0
+        for rec in recs:
+            sh = rec['shares'] or 0
+            delta = sh - prev
+            prev = sh
+            if delta > 0:                       # 売り増し＝建玉
+                pr = price_at(rec['date'])
+                if pr:
+                    qty += delta
+                    s_low += delta * pr[0]
+                    s_mid += delta * pr[1]
+                    s_high += delta * pr[2]
+        if qty <= 0:
+            continue
+        a_low, a_mid, a_high = s_low / qty, s_mid / qty, s_high / qty
+
+        def gap(entry):
+            return round((close - entry) / entry * 100, 1) if entry else None
+
+        rows.append({
+            'institution': inst, 'shares': int(cur_shares), 'ratio': round(cur_ratio, 2),
+            'avg_low': round(a_low, 1), 'avg_mid': round(a_mid, 1), 'avg_high': round(a_high, 1),
+            'gap_low': gap(a_low), 'gap_mid': gap(a_mid), 'gap_high': gap(a_high),
+            'priced_qty': int(qty),
+        })
+    rows.sort(key=lambda x: x['ratio'], reverse=True)
+
+    # 全機関 加重平均（現在残高株数で加重）
+    agg = None
+    tw = sum(r['shares'] for r in rows)
+    if tw > 0:
+        a_low = sum(r['avg_low'] * r['shares'] for r in rows) / tw
+        a_mid = sum(r['avg_mid'] * r['shares'] for r in rows) / tw
+        a_high = sum(r['avg_high'] * r['shares'] for r in rows) / tw
+        agg = {
+            'avg_low': round(a_low, 1), 'avg_mid': round(a_mid, 1), 'avg_high': round(a_high, 1),
+            'gap_low': round((close - a_low) / a_low * 100, 1) if a_low else None,
+            'gap_mid': round((close - a_mid) / a_mid * 100, 1) if a_mid else None,
+            'gap_high': round((close - a_high) / a_high * 100, 1) if a_high else None,
+            'shares': int(tw),
+        }
+    return {'rows': rows, 'agg': agg, 'close': close, 'latest': latest}
+
+
 def short_top_ratio(limit=50):
     """最新日 空売り残高割合トップ（積み上がっている銘柄）"""
     latest = short_max_date()

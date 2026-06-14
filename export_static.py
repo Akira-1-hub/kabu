@@ -113,6 +113,9 @@ def build():
                 for k, v in state.items() if v[0] >= db.SHORT_THRESHOLD]
         inst.sort(key=lambda x: x['ratio'], reverse=True)
 
+        # 推定建単価（在庫データから純関数で計算）
+        cost = db.compute_cost_basis(prices_by_code.get(code, []), shorts_by_code.get(code, []))
+
         fund = funds.get(code)
         detail = {
             'code': code,
@@ -126,6 +129,7 @@ def build():
             'hits': [{'d': h['date'], 'c': h['condition'], 't': h['detail']}
                      for h in hits_by_code.get(code, [])],
             'tags': tags_by_code.get(code, []),
+            'cost': {'agg': cost['agg'], 'rows': cost['rows'][:15], 'close': cost['close']},
         }
         with open(os.path.join(SITE, 'data', f'{code}.json'), 'w', encoding='utf-8') as f:
             json.dump(detail, f, ensure_ascii=False, separators=(',', ':'))

@@ -101,6 +101,7 @@ def stock_detail(code):
                            hits=db.get_stock_hit_history(code),
                            shorts_latest=db.get_short_latest_by_institution(code),
                            short_daily=db.get_short_daily_total(code),
+                           cost_basis=db.short_cost_basis(code),
                            flow_tags=db.get_flow_tags(code),
                            flow_label=db.FLOW_LABEL,
                            memos=db.get_memos(code))
@@ -120,6 +121,12 @@ def api_flow_tag(code):
 @app.route('/api/flow_marks/<code>')
 def api_flow_marks(code):
     return jsonify({t['date']: t['tag'] for t in db.get_flow_tags(code)})
+
+
+@app.route('/api/cost_band/<code>')
+def api_cost_band(code):
+    cb = db.short_cost_basis(code)
+    return jsonify(cb.get('agg'))
 
 
 @app.route('/api/short_daily/<code>')
