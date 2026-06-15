@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}本日{{ '値下がり' if falling else '上昇' }}率ランキング - 投資DB{% endblock %}
+{% block content %}
+
+<div class="page-title">
+  {{ '📉 本日値下がり率ランキング' if falling else '📈 本日上昇率ランキング' }}
+  <span class="muted" style="font-size:13px;font-weight:400">{{ g.date or '-' }}（材料: TDnet {{ g.disc_date or '-' }}）</span>
+  <span class="spacer" style="flex:1"></span>
+  <a class="btn btn-sm {{ 'btn-ghost' if falling else 'btn-accent' }}" href="/gainers">上昇率</a>
+  <a class="btn btn-sm {{ 'btn-accent' if falling else 'btn-ghost' }}" href="/gainers?dir=down">値下がり率</a>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>空売り比率</th>
+        <th class="txt-left">コード</th><th class="txt-left">銘柄名</th>
+        <th>上昇率</th><th class="hide-sp">終値</th><th class="hide-sp">出来高倍率</th>
+        <th class="txt-left">材料（適時開示）</th>
+      </tr></thead>
+      <tbody>
+        {% for r in g.rows %}
+        <tr>
+          <td class="{{ 'rise' if r.short_ratio and r.short_ratio>=2 else 'muted' }}">
+            {{ '{:.2f}%'.format(r.short_ratio) if r.short_ratio is not none else '' }}</td>
+          <td class="txt-left code"><a href="/stock/{{ r.code }}">{{ r.code }}</a></td>
+          <td class="txt-left"><a href="/stock/{{ r.code }}" style="color:inherit">{{ r.name or '-' }}</a></td>
+          <td class="{{ 'rise' if (r.change_pct or 0)>0 else 'fall' }}"><b>{{ '{:+.2f}%'.format(r.change_pct) }}</b></td>
+          <td class="hide-sp">{{ '{:,.0f}'.format(r.close) if r.close else '-' }}</td>
+          <td class="hide-sp">{{ '{:.1f}x'.format(r.volume_ratio) if r.volume_ratio else '-' }}</td>
+          <td class="txt-left" style="white-space:normal;max-width:520px">
+            {% for m in r.materials %}
+            <div style="font-size:12px">{{ m }}</div>
+            {% endfor %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="empty">データがありません。ダッシュボードでスキャンしてください</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="muted" style="font-size:11px;margin-top:8px">
+  ※材料は TDnet（適時開示）の直近開示をコード一致で表示。空売り比率は機関の現在残高合計（2%以上を赤）。
+</div>
+
+{% endblock %}

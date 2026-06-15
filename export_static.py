@@ -77,6 +77,7 @@ def build():
         'prices': latest_prices,
         'short': short_sum,
         'hits30': db.get_hit_count_ranking(30)[:50],
+        'gainers': db.gainers_ranking(limit=100),
     }
     with open(os.path.join(SITE, 'data.json'), 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, separators=(',', ':'))

@@ -12,6 +12,7 @@
   <span class="brand">📈 投資DB</span>
   <a class="tab {% if request.path=='/' %}active{% endif %}" href="/">ダッシュボード</a>
   <a class="tab {% if request.path=='/stocks' %}active{% endif %}" href="/stocks">銘柄一覧</a>
+  <a class="tab {% if request.path=='/gainers' %}active{% endif %}" href="/gainers">上昇率</a>
   <a class="tab {% if request.path=='/rankings' %}active{% endif %}" href="/rankings">ランキング</a>
   <a class="tab {% if request.path=='/short' %}active{% endif %}" href="/short">空売り</a>
   <a class="tab {% if request.path=='/watchlist' %}active{% endif %}" href="/watchlist">ウォッチ</a>

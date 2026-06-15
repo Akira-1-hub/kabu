@@ -188,6 +188,13 @@ def watchlist_page():
     return render_template('watchlist.html', watchlist=wl)
 
 
+@app.route('/gainers')
+def gainers_page():
+    falling = request.args.get('dir') == 'down'
+    g = db.gainers_ranking(limit=100, falling=falling)
+    return render_template('gainers.html', g=g, falling=falling)
+
+
 @app.route('/short')
 def short_page():
     period = request.args.get('period', 'daily')
@@ -241,8 +248,10 @@ def api_scan_start():
         'workers': int(d.get('workers', 20)),
     }, daemon=True)
     _scan_thread.start()
-    # 空売り更新も同時に走らせる（軽いので並行でOK）
+    # 空売り更新＆TDnet開示も同時に走らせる（軽いので並行でOK）
     _start_short_update()
+    threading.Thread(target=lambda: __import__('fetch_tdnet').import_tdnet(days=2, log=lambda m: None),
+                     daemon=True).start()
     return jsonify({'ok': True})
 
 

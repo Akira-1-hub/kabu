@@ -836,6 +836,87 @@ def recreate_short_table():
 
 
 # ============================================================
+# 適時開示（TDnet）
+# ============================================================
+def bulk_save_disclosures(rows):
+    """rows: list of dict(code,date,title,company,url,time)"""
+    conn = get_conn()
+    conn.executemany("""
+        INSERT OR IGNORE INTO disclosures(code,date,title,category,url)
+        VALUES(:code,:date,:title,:category,:url)
+    """, [{'code': r['code'], 'date': r['date'], 'title': r['title'],
+           'category': r.get('time', ''), 'url': r.get('url', '')} for r in rows])
+    conn.commit()
+    conn.close()
+
+
+def get_disclosures(code, limit=20):
+    conn = get_conn()
+    rows = conn.execute(
+        'SELECT * FROM disclosures WHERE code=? ORDER BY date DESC, id DESC LIMIT ?',
+        (code, limit)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def disclosures_map(since_date):
+    """since_date以降の開示を code -> [titles] で返す（ランキング材料用）"""
+    conn = get_conn()
+    rows = conn.execute(
+        'SELECT code, date, title FROM disclosures WHERE date >= ? ORDER BY date DESC, id DESC',
+        (since_date,)).fetchall()
+    conn.close()
+    out = {}
+    for r in rows:
+        out.setdefault(r['code'], []).append(r['title'])
+    return out
+
+
+def disclosure_data_range():
+    conn = get_conn()
+    r = conn.execute('SELECT COUNT(*) n, MAX(date) mx FROM disclosures').fetchone()
+    conn.close()
+    return {'n': r['n'], 'max_d': r['mx']}
+
+
+def gainers_ranking(limit=100, falling=False):
+    """本日上昇率ランキング（最新取引日）＋空売り比率＋TDnet材料
+    falling=Trueで値下がり率
+    """
+    from datetime import datetime, timedelta
+    conn = get_conn()
+    D = conn.execute('SELECT MAX(date) d FROM daily_prices').fetchone()['d']
+    if not D:
+        conn.close()
+        return {'date': None, 'rows': [], 'disc_date': None}
+    order = 'ASC' if falling else 'DESC'
+    prows = conn.execute(f"""
+        SELECT dp.code, dp.close, dp.change, dp.change_pct, dp.volume, dp.volume_ratio, s.name
+        FROM daily_prices dp LEFT JOIN stocks s ON dp.code=s.code
+        WHERE dp.date=? AND dp.change_pct IS NOT NULL
+        ORDER BY dp.change_pct {order} LIMIT ?
+    """, (D, limit)).fetchall()
+    conn.close()
+
+    sd = short_max_date()
+    short = short_totals_asof(sd) if sd else {}
+    since = (datetime.strptime(D, '%Y-%m-%d') - timedelta(days=4)).strftime('%Y-%m-%d')
+    disc = disclosures_map(since)
+
+    rows = []
+    for r in prows:
+        sv = short.get(r['code'])
+        rows.append({
+            'code': r['code'], 'name': r['name'] or '',
+            'close': r['close'], 'change': r['change'], 'change_pct': r['change_pct'],
+            'volume': r['volume'], 'volume_ratio': r['volume_ratio'],
+            'short_ratio': round(sv['total_ratio'], 2) if sv else None,
+            'materials': disc.get(r['code'], [])[:3],
+        })
+    return {'date': D, 'rows': rows, 'disc_date': disclosure_data_range()['max_d']}
+
+
+# ============================================================
 # 大口傾向タグ
 # ============================================================
 FLOW_TAGS = ('buy', 'neutral', 'sell')

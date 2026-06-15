@@ -52,6 +52,7 @@
 
 <div class="tabs">
   <button class="on" data-p="screen">スクリーニング</button>
+  <button data-p="gainers">上昇率</button>
   <button data-p="short">空売り</button>
   <button data-p="hits">継続出現</button>
 </div>
@@ -86,6 +87,14 @@
         </table>
       </div>
     </div>
+  </div>
+
+  <!-- 上昇率 -->
+  <div class="panel" id="p-gainers">
+    <div class="filters"><span class="cnt" id="gn-range"></span></div>
+    <div class="card"><h2>📈 本日上昇率ランキング（材料＝TDnet適時開示）</h2><div class="tw"><table>
+      <thead><tr><th>空売り%</th><th class="l">コード</th><th class="l">銘柄名</th><th>上昇率</th><th class="hide-sp">終値</th><th class="l">材料（適時開示）</th></tr></thead>
+      <tbody id="b-gainers"></tbody></table></div></div>
   </div>
 
   <!-- 空売り -->
@@ -151,10 +160,23 @@ fetch('data.json').then(r=>r.json()).then(d=>{
     <span><span class="muted">-3%↓</span> <b class="fall">${dn3}</b></span>
     <span><span class="muted">出来高2x↑</span> <b class="both">${v2}</b></span>
     <span><span class="muted">空売り最新</span> <b>${d.short.latest||'-'}</b></span>`;
-  renderScreen(); renderShort(); renderHits();
+  renderScreen(); renderShort(); renderHits(); renderGainers();
 }).catch(e=>{
   document.getElementById('updated').textContent = 'data.json が読めません';
 });
+
+function renderGainers(){
+  if(!D || !D.gainers) return;
+  const g = D.gainers;
+  document.getElementById('gn-range').textContent = `${g.date||'-'}（材料: TDnet ${g.disc_date||'-'}）`;
+  document.getElementById('b-gainers').innerHTML = (g.rows||[]).map(r=>`<tr>
+    <td class="${r.short_ratio>=2?'rise':'muted'}">${r.short_ratio!=null?r.short_ratio.toFixed(2)+'%':''}</td>
+    <td class="l muted">${lk(r.code,r.code)}</td><td class="l">${lk(r.code,r.name||'-')}</td>
+    <td class="${r.change_pct>0?'rise':'fall'}"><b>${fmtP(r.change_pct)}</b></td>
+    <td class="hide-sp">${fmtN(r.close)}</td>
+    <td class="l" style="white-space:normal">${(r.materials||[]).map(m=>`<div style="font-size:12px">${m}</div>`).join('')}</td>
+  </tr>`).join('') || '<tr><td colspan="6" class="empty">なし</td></tr>';
+}
 
 // タブ
 document.querySelectorAll('.tabs button').forEach(b=>{
