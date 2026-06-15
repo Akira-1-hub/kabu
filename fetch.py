@@ -157,7 +157,8 @@ def fetch_fundamentals(code: str) -> dict | None:
     sess.headers.update(HEADERS)
     out = {'code': code, 'updated': _dt.now().strftime('%Y-%m-%d'),
            'market_cap_oku': None, 'per': None, 'pbr': None, 'eps': None,
-           'dividend_yield': None, 'unit_shares': None, 'description': None}
+           'dividend_yield': None, 'unit_shares': None, 'description': None,
+           'op_margin': None}
 
     def fnum(s):
         s = str(s).replace(',', '').replace('倍', '').replace('％', '').replace('%', '').replace('円', '').strip()
@@ -231,6 +232,26 @@ def fetch_fundamentals(code: str) -> dict | None:
     except Exception:
         return None
 
+    # ---- kabutan finance：営業利益率（営業益÷売上高、予想優先） ----
+    try:
+        rf = sess.get(f'https://kabutan.jp/stock/finance?code={code}', timeout=10)
+        rf.encoding = 'utf-8'
+        for t in pd.read_html(StringIO(rf.text)):
+            cols = [str(c) for c in t.columns]
+            if '売上高' in cols and '営業益' in cols and '決算期' in cols:
+                tt = t.dropna(subset=['売上高', '営業益'])
+                # 予想行（決算期が「予」始まり）優先、無ければ最新
+                pred = tt[tt['決算期'].astype(str).str.contains('予', na=False)]
+                row = pred.iloc[-1] if len(pred) else (tt.iloc[-1] if len(tt) else None)
+                if row is not None:
+                    sales = fnum(row['売上高'])
+                    opinc = fnum(row['営業益'])
+                    if sales and sales != 0:
+                        out['op_margin'] = round(opinc / sales * 100, 2)
+                break
+    except Exception:
+        pass
+
     # ---- Yahoo!ファイナンス profile：特色・連結事業 ----
     try:
         r2 = sess.get(f'https://finance.yahoo.co.jp/quote/{code}.T/profile', timeout=10)
@@ -251,6 +272,35 @@ def fetch_fundamentals(code: str) -> dict | None:
         pass
 
     return out
+
+
+def ensure_fundamentals(codes, max_workers=12, force=False):
+    """指定コードのファンダを並列取得・キャッシュ（当日取得済みはスキップ）"""
+    from datetime import datetime as _dt
+    today = _dt.now().strftime('%Y-%m-%d')
+    todo = []
+    for c in codes:
+        f = db.get_fundamentals(c)
+        if force or f is None or f.get('updated') != today or f.get('op_margin') is None:
+            todo.append(c)
+    if not todo:
+        return 0
+
+    def work(c):
+        try:
+            d = fetch_fundamentals(c)
+            if d:
+                db.save_fundamentals(d)
+                return 1
+        except Exception:
+            pass
+        return 0
+
+    n = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        for r in as_completed([ex.submit(work, c) for c in todo]):
+            n += r.result()
+    return n
 
 
 # ============================================================

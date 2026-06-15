@@ -50,6 +50,13 @@ def _do_scan(scope, min_pct, surge, mode, workers):
         )
         scan_state['last_scan'] = datetime.now().strftime('%m/%d %H:%M')
         scan_state['status'] = f'完了 {len(results)}銘柄取得 ({datetime.now().strftime("%H:%M:%S")})'
+        # 上昇率上位の営業利益率を裏で取得しておく（次に上昇率ページを見たとき表示用）
+        try:
+            top = [g['code'] for g in db.gainers_ranking(limit=60)['rows']]
+            threading.Thread(target=lambda: fetch.ensure_fundamentals(top, max_workers=12),
+                             daemon=True).start()
+        except Exception:
+            pass
     except Exception as e:
         scan_state['status'] = f'エラー: {e}'
     finally:
@@ -188,11 +195,32 @@ def watchlist_page():
     return render_template('watchlist.html', watchlist=wl)
 
 
+margin_state = {'running': False}
+
+
 @app.route('/gainers')
 def gainers_page():
     falling = request.args.get('dir') == 'down'
     g = db.gainers_ranking(limit=100, falling=falling)
     return render_template('gainers.html', g=g, falling=falling)
+
+
+@app.route('/api/gainers/margins', methods=['POST', 'GET'])
+def api_gainers_margins():
+    if request.method == 'GET':
+        return jsonify({'running': margin_state['running']})
+    if margin_state['running']:
+        return jsonify({'ok': True})
+
+    def run():
+        margin_state['running'] = True
+        try:
+            top = [g['code'] for g in db.gainers_ranking(limit=80)['rows']]
+            fetch.ensure_fundamentals(top, max_workers=12)
+        finally:
+            margin_state['running'] = False
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify({'ok': True})
 
 
 @app.route('/short')

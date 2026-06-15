@@ -123,7 +123,8 @@ CREATE TABLE IF NOT EXISTS fundamentals (
     eps             REAL,        -- 予想EPS
     dividend_yield  REAL,        -- 配当利回り%
     unit_shares     INTEGER,     -- 単元株数
-    description     TEXT         -- 事業内容
+    description     TEXT,        -- 事業内容
+    op_margin       REAL         -- 営業利益率%
 );
 
 -- スキャン実行ログ
@@ -142,6 +143,11 @@ CREATE TABLE IF NOT EXISTS scan_runs (
 def init_db():
     conn = get_conn()
     conn.executescript(SCHEMA)
+    # 既存DBへの列追加（マイグレーション）
+    try:
+        conn.execute('ALTER TABLE fundamentals ADD COLUMN op_margin REAL')
+    except Exception:
+        pass
     conn.commit()
     conn.close()
 
@@ -903,6 +909,11 @@ def gainers_ranking(limit=100, falling=False):
     since = (datetime.strptime(D, '%Y-%m-%d') - timedelta(days=4)).strftime('%Y-%m-%d')
     disc = disclosures_map(since)
 
+    conn = get_conn()
+    margins = {r['code']: r['op_margin'] for r in conn.execute(
+        'SELECT code, op_margin FROM fundamentals').fetchall()}
+    conn.close()
+
     rows = []
     for r in prows:
         sv = short.get(r['code'])
@@ -911,6 +922,7 @@ def gainers_ranking(limit=100, falling=False):
             'close': r['close'], 'change': r['change'], 'change_pct': r['change_pct'],
             'volume': r['volume'], 'volume_ratio': r['volume_ratio'],
             'short_ratio': round(sv['total_ratio'], 2) if sv else None,
+            'op_margin': margins.get(r['code']),
             'materials': disc.get(r['code'], [])[:3],
         })
     return {'date': D, 'rows': rows, 'disc_date': disclosure_data_range()['max_d']}
@@ -984,14 +996,14 @@ def save_fundamentals(d: dict):
     conn = get_conn()
     conn.execute("""
         INSERT OR REPLACE INTO fundamentals
-        (code,updated,market_cap_oku,per,pbr,eps,dividend_yield,unit_shares,description)
-        VALUES(:code,:updated,:market_cap_oku,:per,:pbr,:eps,:dividend_yield,:unit_shares,:description)
+        (code,updated,market_cap_oku,per,pbr,eps,dividend_yield,unit_shares,description,op_margin)
+        VALUES(:code,:updated,:market_cap_oku,:per,:pbr,:eps,:dividend_yield,:unit_shares,:description,:op_margin)
     """, {
         'code': d['code'], 'updated': d.get('updated'),
         'market_cap_oku': d.get('market_cap_oku'), 'per': d.get('per'),
         'pbr': d.get('pbr'), 'eps': d.get('eps'),
         'dividend_yield': d.get('dividend_yield'), 'unit_shares': d.get('unit_shares'),
-        'description': d.get('description'),
+        'description': d.get('description'), 'op_margin': d.get('op_margin'),
     })
     conn.commit()
     conn.close()

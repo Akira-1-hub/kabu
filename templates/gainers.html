@@ -6,6 +6,7 @@
   {{ '📉 本日値下がり率ランキング' if falling else '📈 本日上昇率ランキング' }}
   <span class="muted" style="font-size:13px;font-weight:400">{{ g.date or '-' }}（材料: TDnet {{ g.disc_date or '-' }}）</span>
   <span class="spacer" style="flex:1"></span>
+  <button class="btn btn-sm btn-ghost" id="btn-margin" onclick="fetchMargins()">営業利益率を取得</button>
   <a class="btn btn-sm {{ 'btn-ghost' if falling else 'btn-accent' }}" href="/gainers">上昇率</a>
   <a class="btn btn-sm {{ 'btn-accent' if falling else 'btn-ghost' }}" href="/gainers?dir=down">値下がり率</a>
 </div>
@@ -14,7 +15,7 @@
   <div class="table-wrap">
     <table>
       <thead><tr>
-        <th>空売り比率</th>
+        <th>空売り比率</th><th class="hide-sp">営業利益率</th>
         <th class="txt-left">コード</th><th class="txt-left">銘柄名</th>
         <th>上昇率</th><th class="hide-sp">終値</th><th class="hide-sp">出来高倍率</th>
         <th class="txt-left">材料（適時開示）</th>
@@ -24,6 +25,8 @@
         <tr>
           <td class="{{ 'rise' if r.short_ratio and r.short_ratio>=2 else 'muted' }}">
             {{ '{:.2f}%'.format(r.short_ratio) if r.short_ratio is not none else '' }}</td>
+          <td class="hide-sp {{ 'fall' if r.op_margin is not none and r.op_margin<0 else '' }}">
+            {{ '{:.1f}%'.format(r.op_margin) if r.op_margin is not none else '-' }}</td>
           <td class="txt-left code"><a href="/stock/{{ r.code }}">{{ r.code }}</a></td>
           <td class="txt-left"><a href="/stock/{{ r.code }}" style="color:inherit">{{ r.name or '-' }}</a></td>
           <td class="{{ 'rise' if (r.change_pct or 0)>0 else 'fall' }}"><b>{{ '{:+.2f}%'.format(r.change_pct) }}</b></td>
@@ -36,7 +39,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="7" class="empty">データがありません。ダッシュボードでスキャンしてください</td></tr>
+        <tr><td colspan="8" class="empty">データがありません。ダッシュボードでスキャンしてください</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -44,6 +47,20 @@
 </div>
 <div class="muted" style="font-size:11px;margin-top:8px">
   ※材料は TDnet（適時開示）の直近開示をコード一致で表示。空売り比率は機関の現在残高合計（2%以上を赤）。
+  営業利益率は会社予想（赤字はマイナス）。「営業利益率を取得」で未取得分を一括取得します。
 </div>
 
+{% endblock %}
+{% block script %}
+<script>
+async function fetchMargins(){
+  const btn = document.getElementById('btn-margin');
+  await fetch('/api/gainers/margins', {method:'POST'});
+  btn.textContent = '⏳ 取得中...'; btn.disabled = true;
+  const timer = setInterval(async ()=>{
+    const s = await (await fetch('/api/gainers/margins')).json();
+    if(!s.running){ clearInterval(timer); location.reload(); }
+  }, 2500);
+}
+</script>
 {% endblock %}

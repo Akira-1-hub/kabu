@@ -93,7 +93,7 @@
   <div class="panel" id="p-gainers">
     <div class="filters"><span class="cnt" id="gn-range"></span></div>
     <div class="card"><h2>📈 本日上昇率ランキング（材料＝TDnet適時開示）</h2><div class="tw"><table>
-      <thead><tr><th>空売り%</th><th class="l">コード</th><th class="l">銘柄名</th><th>上昇率</th><th class="hide-sp">終値</th><th class="l">材料（適時開示）</th></tr></thead>
+      <thead><tr><th>空売り%</th><th class="hide-sp">営業利益率</th><th class="l">コード</th><th class="l">銘柄名</th><th>上昇率</th><th class="hide-sp">終値</th><th class="l">材料（適時開示）</th></tr></thead>
       <tbody id="b-gainers"></tbody></table></div></div>
   </div>
 
@@ -171,6 +171,7 @@ function renderGainers(){
   document.getElementById('gn-range').textContent = `${g.date||'-'}（材料: TDnet ${g.disc_date||'-'}）`;
   document.getElementById('b-gainers').innerHTML = (g.rows||[]).map(r=>`<tr>
     <td class="${r.short_ratio>=2?'rise':'muted'}">${r.short_ratio!=null?r.short_ratio.toFixed(2)+'%':''}</td>
+    <td class="hide-sp ${r.op_margin!=null&&r.op_margin<0?'fall':''}">${r.op_margin!=null?r.op_margin.toFixed(1)+'%':'-'}</td>
     <td class="l muted">${lk(r.code,r.code)}</td><td class="l">${lk(r.code,r.name||'-')}</td>
     <td class="${r.change_pct>0?'rise':'fall'}"><b>${fmtP(r.change_pct)}</b></td>
     <td class="hide-sp">${fmtN(r.close)}</td>
