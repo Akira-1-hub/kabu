@@ -688,89 +688,147 @@ def squeeze_ranking(period='weekly', limit=50, weights=None):
 
 
 def short_cost_basis(code):
-    """各機関の推定建単価（安値/中央/高値の3パターン）＋現在株価との乖離"""
+    """各機関の空売り単価・買戻し単価・値幅・確定損益・含み損益（Excel方式）"""
     conn = get_conn()
     price_rows = conn.execute(
         'SELECT date,high,low,close FROM daily_prices WHERE code=?', (code,)).fetchall()
     short_rows = conn.execute(
-        'SELECT date,institution,shares,ratio FROM short_selling WHERE code=? ORDER BY institution,date',
-        (code,)).fetchall()
+        'SELECT date,institution,shares,ratio,change_shares FROM short_selling '
+        'WHERE code=? ORDER BY institution,date', (code,)).fetchall()
     conn.close()
     return compute_cost_basis(price_rows, short_rows)
 
 
 def compute_cost_basis(price_rows, short_rows):
-    """建玉(売り増し)を日ごとにその日のOHLCで値付けして加重平均（純関数）
+    """機関別の空売り/買戻し分析（純関数・Excel方式）
+    各日の増減量(change_shares)を 空売量(＋)/買戻量(−) に分け、その日の高値・安値で値付け。
+      空売り単価 = Σ(空売量×高値 or 安値) / Σ空売量
+      買戻し単価 = Σ(買戻量×高値 or 安値) / Σ買戻量
+      値幅      = 空売り単価 − 買戻し単価（最良=高売×安戻 / 最悪=安売×高戻）
+      確定損益  = 値幅 × 買戻量合計（実現）
+      含み損益  = (空売り単価 − 現在株価) × 現在残高数量（残ポジの評価損益）
     返り値: {'rows':[...], 'agg':{...}, 'close':現在終値, 'latest':日付}
     """
     prices = {r['date']: r for r in price_rows}
-    srows = short_rows
-    if not prices or not srows:
+    if not prices or not short_rows:
         return {'rows': [], 'agg': None, 'close': None, 'latest': None}
 
     latest = max(prices)
     close = prices[latest]['close']
 
-    # 機関ごとに集計
     by_inst = {}
-    for r in srows:
+    for r in short_rows:
         by_inst.setdefault(r['institution'], []).append(r)
 
-    def price_at(d):
+    def hl(d):
         p = prices.get(d)
         if not p or p['high'] is None or p['low'] is None:
             return None
-        return p['low'], (p['high'] + p['low']) / 2, p['high']
+        return p['high'], p['low']
 
     rows = []
+    # 全機関合算用
+    g = {'sq': 0.0, 'sh': 0.0, 'sl': 0.0, 'bq': 0.0, 'bh': 0.0, 'bl': 0.0,
+         'rb': 0.0, 'ra': 0.0, 'rw': 0.0, 'ub': 0.0, 'ua': 0.0, 'uw': 0.0, 'shares': 0}
+
     for inst, recs in by_inst.items():
         recs.sort(key=lambda x: x['date'])
         cur_shares = recs[-1]['shares'] or 0
         cur_ratio = recs[-1]['ratio'] or 0
-        if cur_ratio < SHORT_THRESHOLD:        # 現在アクティブな機関のみ
-            continue
+        from datetime import datetime as _dt
+        sq = sh = sl = 0.0   # 空売: 量・高値金額・安値金額
+        bq = bh = bl = 0.0   # 買戻: 量・高値金額・安値金額
         prev = 0
-        qty = 0.0
-        s_low = s_mid = s_high = 0.0
+        prev_date = None
+        ep_peak = 0.0        # 現エピソードの残高割合ピーク
         for rec in recs:
-            sh = rec['shares'] or 0
-            delta = sh - prev
-            prev = sh
-            if delta > 0:                       # 売り増し＝建玉
-                pr = price_at(rec['date'])
-                if pr:
-                    qty += delta
-                    s_low += delta * pr[0]
-                    s_mid += delta * pr[1]
-                    s_high += delta * pr[2]
-        if qty <= 0:
+            shv = rec['shares'] or 0
+            rat = rec['ratio'] or 0
+            d = _dt.strptime(rec['date'], '%Y-%m-%d')
+            # 長期の報告空白（>25日）＝ポジション解消→再構築 と見なし新エピソード開始
+            if prev_date is None or (d - prev_date).days > 25:
+                sq = sh = sl = bq = bh = bl = 0.0
+                prev = 0
+                ep_peak = 0.0
+            prev_date = d
+            chg = shv - prev          # 増減量＝残高の連続差分（Excel右表と同じ定義）
+            prev = shv
+            ep_peak = max(ep_peak, rat)
+            v = hl(rec['date'])
+            if not v or chg == 0:
+                continue
+            high, low = v
+            if chg > 0:
+                sq += chg; sh += chg * high; sl += chg * low
+            else:
+                q = -chg
+                bq += q; bh += q * high; bl += q * low
+        # 現エピソードで0.5%以上に達した銘柄＆まだ建玉が残っている機関のみ
+        if sq <= 0 or cur_shares <= 0 or ep_peak < SHORT_THRESHOLD:
             continue
-        a_low, a_mid, a_high = s_low / qty, s_mid / qty, s_high / qty
-
-        def gap(entry):
-            return round((close - entry) / entry * 100, 1) if entry else None
+        sell_high, sell_low = sh / sq, sl / sq
+        sell_mid = (sell_high + sell_low) / 2
+        if bq > 0:
+            buy_high, buy_low = bh / bq, bl / bq
+            buy_mid = (buy_high + buy_low) / 2
+            sp_best = sell_high - buy_low
+            sp_worst = sell_low - buy_high
+            sp_avg = sell_mid - buy_mid
+            re_best, re_avg, re_worst = sp_best * bq, sp_avg * bq, sp_worst * bq
+        else:
+            buy_high = buy_low = buy_mid = None
+            sp_best = sp_avg = sp_worst = None
+            re_best = re_avg = re_worst = 0.0
+        # 含み損益（残ポジ＝現在残高数量）。空売りは売値が現在値より高いほど益
+        ub = (sell_high - close) * cur_shares
+        ua = (sell_mid - close) * cur_shares
+        uw = (sell_low - close) * cur_shares
 
         rows.append({
             'institution': inst, 'shares': int(cur_shares), 'ratio': round(cur_ratio, 2),
-            'avg_low': round(a_low, 1), 'avg_mid': round(a_mid, 1), 'avg_high': round(a_high, 1),
-            'gap_low': gap(a_low), 'gap_mid': gap(a_mid), 'gap_high': gap(a_high),
-            'priced_qty': int(qty),
+            'sell_high': round(sell_high, 1), 'sell_low': round(sell_low, 1), 'sell_mid': round(sell_mid, 1),
+            'sell_qty': int(sq),
+            'buy_high': round(buy_high, 1) if buy_high else None,
+            'buy_low': round(buy_low, 1) if buy_low else None,
+            'buy_mid': round(buy_mid, 1) if buy_mid else None,
+            'buy_qty': int(bq),
+            'spread_best': round(sp_best, 1) if sp_best is not None else None,
+            'spread_avg': round(sp_avg, 1) if sp_avg is not None else None,
+            'spread_worst': round(sp_worst, 1) if sp_worst is not None else None,
+            'realized_best': round(re_best), 'realized_avg': round(re_avg), 'realized_worst': round(re_worst),
+            'unreal_best': round(ub), 'unreal_avg': round(ua), 'unreal_worst': round(uw),
         })
+        g['sq'] += sq; g['sh'] += sh; g['sl'] += sl
+        g['bq'] += bq; g['bh'] += bh; g['bl'] += bl
+        g['rb'] += re_best; g['ra'] += re_avg; g['rw'] += re_worst
+        g['ub'] += ub; g['ua'] += ua; g['uw'] += uw; g['shares'] += cur_shares
+
     rows.sort(key=lambda x: x['ratio'], reverse=True)
 
-    # 全機関 加重平均（現在残高株数で加重）
     agg = None
-    tw = sum(r['shares'] for r in rows)
-    if tw > 0:
-        a_low = sum(r['avg_low'] * r['shares'] for r in rows) / tw
-        a_mid = sum(r['avg_mid'] * r['shares'] for r in rows) / tw
-        a_high = sum(r['avg_high'] * r['shares'] for r in rows) / tw
+    if g['sq'] > 0:
+        sh_, sl_ = g['sh'] / g['sq'], g['sl'] / g['sq']
+        sm_ = (sh_ + sl_) / 2
+        if g['bq'] > 0:
+            bh_, bl_ = g['bh'] / g['bq'], g['bl'] / g['bq']
+            bm_ = (bh_ + bl_) / 2
+            sp_b, sp_a, sp_w = sh_ - bl_, sm_ - bm_, sl_ - bh_
+        else:
+            bh_ = bl_ = bm_ = None
+            sp_b = sp_a = sp_w = None
         agg = {
-            'avg_low': round(a_low, 1), 'avg_mid': round(a_mid, 1), 'avg_high': round(a_high, 1),
-            'gap_low': round((close - a_low) / a_low * 100, 1) if a_low else None,
-            'gap_mid': round((close - a_mid) / a_mid * 100, 1) if a_mid else None,
-            'gap_high': round((close - a_high) / a_high * 100, 1) if a_high else None,
-            'shares': int(tw),
+            # チャート帯互換（空売り単価ゾーン）
+            'avg_low': round(sl_, 1), 'avg_mid': round(sm_, 1), 'avg_high': round(sh_, 1),
+            'sell_high': round(sh_, 1), 'sell_low': round(sl_, 1), 'sell_mid': round(sm_, 1),
+            'buy_high': round(bh_, 1) if bh_ else None,
+            'buy_low': round(bl_, 1) if bl_ else None,
+            'buy_mid': round(bm_, 1) if bm_ else None,
+            'spread_best': round(sp_b, 1) if sp_b is not None else None,
+            'spread_avg': round(sp_a, 1) if sp_a is not None else None,
+            'spread_worst': round(sp_w, 1) if sp_w is not None else None,
+            'realized_best': round(g['rb']), 'realized_avg': round(g['ra']), 'realized_worst': round(g['rw']),
+            'unreal_best': round(g['ub']), 'unreal_avg': round(g['ua']), 'unreal_worst': round(g['uw']),
+            'shares': int(g['shares']),
         }
     return {'rows': rows, 'agg': agg, 'close': close, 'latest': latest}
 
