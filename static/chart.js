@@ -6,14 +6,14 @@
  株価と空売りは同じ表示インデックスを共有 → ズーム/パンが1対1で連動
  返り値: { setDays(n) }   n<=0で全期間
 */
-function makeStockChart(priceEl, shortEl, bars, shorts, marks, band) {
+function makeStockChart(priceEl, shortEl, bars, shorts, marks, lines) {
   const UP = '#ff6b6b', DOWN = '#4fc3f7';
   const GRID = '#20203a', AXIS = '#8888aa', CROSS = '#9aa0c0';
   const PADR = 56;                 // 右の価格軸ぶん
   const hasShort = shorts && shorts.length > 0;
   const MARKS = marks || {};       // {date: 'buy'|'neutral'|'sell'}
   const MARK_COLOR = { buy: '#2ecc71', neutral: '#95a5a6', sell: '#ff9f43' };
-  const BAND = band || null;       // {low, mid, high} 推定建単価の帯
+  let LINES = lines || [];         // [{price, color, label}] 空売り/買戻し単価など
 
   // 空売りを各バー日付に合わせて繰り越しアライン（同じ長さの配列に）
   const shortAligned = [];
@@ -91,7 +91,7 @@ function makeStockChart(priceEl, shortEl, bars, shorts, marks, band) {
       lo = Math.min(lo, bars[i].low); hi = Math.max(hi, bars[i].high);
       vMax = Math.max(vMax, bars[i].volume || 0);
     }
-    if (BAND) { lo = Math.min(lo, BAND.low); hi = Math.max(hi, BAND.high); }
+    for (const ln of LINES) { lo = Math.min(lo, ln.price); hi = Math.max(hi, ln.price); }
     const pad = (hi - lo) * 0.06 || 1; lo -= pad; hi += pad;
     const yP = p => yTop + (1 - (p - lo) / (hi - lo)) * priceH;
 
@@ -132,16 +132,14 @@ function makeStockChart(priceEl, shortEl, bars, shorts, marks, band) {
       ctx.fillRect(x - cw / 2, top, cw, bh);
     }
 
-    // 推定建単価の帯（安値〜高値）＋中央線
-    if (BAND) {
-      const yHi = yP(BAND.high), yLo = yP(BAND.low), yMid = yP(BAND.mid);
-      ctx.fillStyle = 'rgba(255,159,67,.10)';
-      ctx.fillRect(0, yHi, plotW, yLo - yHi);
-      ctx.strokeStyle = 'rgba(255,159,67,.75)'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(0, yMid); ctx.lineTo(plotW, yMid); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = '#ff9f43'; ctx.font = '10px sans-serif';
-      ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-      ctx.fillText('推定建単価 ' + Math.round(BAND.mid), 4, yMid - 2);
+    // 水平線（空売り単価/買戻し単価など）
+    ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+    for (const ln of LINES) {
+      const y = yP(ln.price);
+      ctx.strokeStyle = ln.color; ctx.setLineDash([5, 3]); ctx.lineWidth = 1.3;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(plotW, y); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = ln.color; ctx.textBaseline = 'bottom';
+      ctx.fillText(ln.label + ' ' + Math.round(ln.price), 4, y - 1);
     }
 
     // 大口タグのマーカー（買い=緑▲下/ 売り=橙▼上 / 中立=灰●）
@@ -339,6 +337,8 @@ function makeStockChart(priceEl, shortEl, bars, shorts, marks, band) {
     draw();
   }
 
+  function setLines(arr) { LINES = arr || []; draw(); }
+
   draw();
-  return { setDays };
+  return { setDays, setLines };
 }

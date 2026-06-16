@@ -96,7 +96,13 @@
   </div>
 
   <div class="card" id="cost-card" style="display:none;border-color:#5a3a2a">
-    <h2>💰 機関の推定建単価（空売り増 × その日の株価で逆算）<span class="muted" id="cost-cur"></span></h2>
+    <style>#b-cost tr.sel{background:rgba(255,159,67,.18)} .btn.sel{outline:2px solid #ff9f43}</style>
+    <h2>💰 機関の空売り/買戻し分析（機関名クリックでチャート表示）
+      <span style="display:flex;gap:6px;align-items:center">
+        <span class="muted" id="cost-cur"></span>
+        <button class="btn sel" id="cost-allbtn" style="font-size:11px;padding:4px 8px" onclick="selectInst(-1)">全機関平均</button>
+      </span>
+    </h2>
     <div id="cost-agg" style="padding:8px 12px;background:rgba(255,159,67,.08);font-size:12.5px;line-height:1.7"></div>
     <div class="tw"><table>
       <thead><tr><th class="l">機関</th><th>残高%</th><th>空売単価<br>高/安</th><th>買戻単価<br>高/安</th><th class="hide-sp">値幅</th><th>含み損益<br>平均</th></tr></thead>
@@ -186,10 +192,16 @@ fetch(`data/${code}.json`).then(r=>{
   const shorts = D.short.series.map(x=>({time:x.d, value:x.r}));
   const marks = {}; (D.tags||[]).forEach(t=>marks[t.date]=t.tag);
   const ag = (D.cost && D.cost.agg) ? D.cost.agg : null;
-  const band = ag ? {low:ag.avg_low, mid:ag.avg_mid, high:ag.avg_high} : null;
+  const instLines = r => { const L=[]; if(r&&r.sell_mid)L.push({price:r.sell_mid,color:'#ff9f43',label:'空売'}); if(r&&r.buy_mid)L.push({price:r.buy_mid,color:'#4fc3f7',label:'買戻'}); return L; };
   document.getElementById('c-short-wrap').style.display = shorts.length ? 'block' : 'none';
   const CH = makeStockChart(document.getElementById('c-main'),
-                            document.getElementById('c-short'), bars, shorts, marks, band);
+                            document.getElementById('c-short'), bars, shorts, marks, instLines(ag));
+  window.selectInst = function(i){
+    const r = (i<0) ? ag : D.cost.rows[i];
+    CH.setLines(instLines(r));
+    document.querySelectorAll('#b-cost tr').forEach((tr,idx)=>tr.classList.toggle('sel', idx===i));
+    const ab=document.getElementById('cost-allbtn'); if(ab) ab.classList.toggle('sel', i<0);
+  };
   document.querySelectorAll('.rbtn').forEach(b=>{
     b.onclick=()=>{document.querySelectorAll('.rbtn').forEach(x=>x.classList.remove('on'));
       b.classList.add('on'); CH.setDays(parseInt(b.dataset.d));};
@@ -210,7 +222,7 @@ fetch(`data/${code}.json`).then(r=>{
         `確定損益 平均<b>${yen(ag.realized_avg)}</b>　`+
         `含み損益 平均<b class="${cls(ag.unreal_avg)}">${yen(ag.unreal_avg)}</b>（＋=含み益/−=含み損）`;
     }
-    document.getElementById('b-cost').innerHTML = D.cost.rows.map(r=>`<tr>
+    document.getElementById('b-cost').innerHTML = D.cost.rows.map((r,i)=>`<tr onclick="selectInst(${i})" style="cursor:pointer">
       <td class="l">${r.institution}</td><td>${r.ratio.toFixed(1)}%</td>
       <td>${Math.round(r.sell_high).toLocaleString()}<span class="muted">/${Math.round(r.sell_low).toLocaleString()}</span></td>
       <td class="muted">${r.buy_mid?Math.round(r.buy_high)+'/'+Math.round(r.buy_low):'-'}</td>

@@ -153,8 +153,12 @@
 {% macro yen(v) %}{% if v is none %}-{% elif v|abs >= 100000000 %}{{ '{:.2f}億'.format(v/100000000) }}{% else %}{{ '{:,.0f}万'.format(v/10000) }}{% endif %}{% endmacro %}
 <div class="card" style="margin-bottom:14px">
   <h2>💰 機関の空売り/買戻し分析（増減量×その日のOHLCで逆算）
-    <span class="muted">現在 {{ '{:,.0f}'.format(cost_basis.close) }}（{{ cost_basis.latest }}）</span>
+    <span style="display:flex;gap:6px;align-items:center">
+      <span class="muted" style="font-size:11px">機関名クリックでチャート表示</span>
+      <button class="btn btn-sm btn-ghost sel" id="cost-allbtn" onclick="selectInst(-1)">全機関平均</button>
+    </span>
   </h2>
+  <style>#cost-tbody tr{cursor:pointer} #cost-tbody tr.sel{background:rgba(255,159,67,.18)} .btn.sel{outline:2px solid #ff9f43}</style>
   <div class="body">
     {% if agg %}
     <div style="padding:10px 12px;background:rgba(255,159,67,.08);border:1px solid #5a3a2a;border-radius:8px;margin-bottom:10px;font-size:13px">
@@ -181,9 +185,9 @@
           <th>空売単価<br>高/安</th><th>買戻単価<br>高/安</th>
           <th class="hide-sp">値幅<br>平均</th><th>含み損益<br>平均</th>
         </tr></thead>
-        <tbody>
+        <tbody id="cost-tbody">
           {% for r in cost_basis.rows %}
-          <tr>
+          <tr onclick="selectInst({{ loop.index0 }})">
             <td class="txt-left">{{ r.institution }}</td>
             <td>{{ '{:.1f}%'.format(r.ratio) }}</td>
             <td>{{ '{:,.0f}'.format(r.sell_high) }}<span class="muted"> / {{ '{:,.0f}'.format(r.sell_low) }}</span></td>
@@ -261,11 +265,18 @@ async function addMemo(){
 }
 
 // ===== 自前ローソク足チャート（株価＋出来高＋空売り＋大口タグ 1対1連動） =====
-let CHART = null, CHART_BARS = [], CHART_SHORTS = [], COST_BAND = null;
+const COST = {{ cost_basis|tojson }};
+function instLines(r){
+  const L = [];
+  if(r && r.sell_mid) L.push({price:r.sell_mid, color:'#ff9f43', label:'空売'});
+  if(r && r.buy_mid)  L.push({price:r.buy_mid,  color:'#4fc3f7', label:'買戻'});
+  return L;
+}
+let CHART = null, CHART_BARS = [], CHART_SHORTS = [], CHART_LINES = instLines(COST.agg);
 function buildChart(marks){
   document.getElementById('shortChartWrap').style.display = CHART_SHORTS.length ? 'block' : 'none';
   CHART = makeStockChart(document.getElementById('mainChart'),
-                         document.getElementById('shortChart'), CHART_BARS, CHART_SHORTS, marks, COST_BAND);
+                         document.getElementById('shortChart'), CHART_BARS, CHART_SHORTS, marks, CHART_LINES);
   const on = document.querySelector('.range-btn.on');
   CHART.setDays(on ? parseInt(on.dataset.d) : 130);
 }
@@ -273,14 +284,22 @@ Promise.all([
   fetch('/api/price_history/'+CODE).then(r=>r.json()),
   fetch('/api/short_daily/'+CODE).then(r=>r.json()),
   fetch('/api/flow_marks/'+CODE).then(r=>r.json()),
-  fetch('/api/cost_band/'+CODE).then(r=>r.json()),
-]).then(([ph, sh, marks, band])=>{
+]).then(([ph, sh, marks])=>{
   CHART_BARS = ph.filter(d=>d.open!=null && d.high!=null && d.low!=null && d.close!=null)
     .map(d=>({time:d.date, open:d.open, high:d.high, low:d.low, close:d.close, volume:d.volume||0}));
   CHART_SHORTS = sh.map(d=>({time:d.date, value:d.total_ratio}));
-  COST_BAND = band && band.avg_mid ? {low:band.avg_low, mid:band.avg_mid, high:band.avg_high} : null;
   buildChart(marks);
 });
+
+// 機関を選んでチャートに空売り/買戻し単価ラインを表示
+function selectInst(i){
+  const r = (i < 0) ? COST.agg : COST.rows[i];
+  CHART_LINES = instLines(r);
+  if(CHART) CHART.setLines(CHART_LINES);
+  document.querySelectorAll('#cost-tbody tr').forEach((tr,idx)=>tr.classList.toggle('sel', idx===i));
+  const ab = document.getElementById('cost-allbtn');
+  if(ab) ab.classList.toggle('sel', i<0);
+}
 
 document.querySelectorAll('.range-btn').forEach(b=>{
   b.onclick = ()=>{
