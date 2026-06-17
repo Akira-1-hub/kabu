@@ -687,8 +687,10 @@ def squeeze_ranking(period='weekly', limit=50, weights=None):
             'from': rank['from'], 'price_latest': price_latest}
 
 
-def short_cost_basis(code):
-    """各機関の空売り単価・買戻し単価・値幅・確定損益・含み損益（Excel方式）"""
+def short_cost_basis(code, from_date=None, to_date=None):
+    """各機関の空売り単価・買戻し単価・値幅・確定損益・含み損益（Excel方式）
+    from_date/to_date を渡すとその期間の売買のみで計算（エピソード自動判定は無効）
+    """
     conn = get_conn()
     price_rows = conn.execute(
         'SELECT date,high,low,close FROM daily_prices WHERE code=?', (code,)).fetchall()
@@ -696,10 +698,10 @@ def short_cost_basis(code):
         'SELECT date,institution,shares,ratio,change_shares FROM short_selling '
         'WHERE code=? ORDER BY institution,date', (code,)).fetchall()
     conn.close()
-    return compute_cost_basis(price_rows, short_rows)
+    return compute_cost_basis(price_rows, short_rows, from_date, to_date)
 
 
-def compute_cost_basis(price_rows, short_rows):
+def compute_cost_basis(price_rows, short_rows, from_date=None, to_date=None):
     """機関別の空売り/買戻し分析（純関数・Excel方式）
     各日の増減量(change_shares)を 空売量(＋)/買戻量(−) に分け、その日の高値・安値で値付け。
       空売り単価 = Σ(空売量×高値 or 安値) / Σ空売量
@@ -715,6 +717,10 @@ def compute_cost_basis(price_rows, short_rows):
 
     latest = max(prices)
     close = prices[latest]['close']
+
+    period_mode = bool(from_date or to_date)
+    fd = from_date or '0000-00-00'
+    td = to_date or '9999-99-99'
 
     by_inst = {}
     for r in short_rows:
@@ -746,9 +752,9 @@ def compute_cost_basis(price_rows, short_rows):
             shv = rec['shares'] or 0
             rat = rec['ratio'] or 0
             d = _dt.strptime(rec['date'], '%Y-%m-%d')
-            # 新エピソード開始＝初回 or「長期空白(>25日) かつ 直前が0.5%未満（報告義務消失で実質消滅）」
-            # 4%超を継続保有しているような銘柄は、報告の時間空白だけではリセットしない
-            if prev_date is None or ((d - prev_date).days > 25 and prev_ratio < SHORT_THRESHOLD):
+            # 期間モードでなければ、新エピソード開始でリセット
+            # （初回 or 「長期空白>25日 かつ 直前0.5%未満＝報告義務消失で実質消滅」）
+            if not period_mode and (prev_date is None or ((d - prev_date).days > 25 and prev_ratio < SHORT_THRESHOLD)):
                 sq = sh = sl = bq = bh = bl = 0.0
                 prev = 0
                 ep_peak = 0.0
@@ -760,14 +766,20 @@ def compute_cost_basis(price_rows, short_rows):
             v = hl(rec['date'])
             if not v or chg == 0:
                 continue
+            # 期間モード：指定期間内の売買のみ集計
+            if period_mode and not (fd <= rec['date'] <= td):
+                continue
             high, low = v
             if chg > 0:
                 sq += chg; sh += chg * high; sl += chg * low
             else:
                 q = -chg
                 bq += q; bh += q * high; bl += q * low
-        # 現エピソードで0.5%以上に達した銘柄＆まだ建玉が残っている機関のみ
-        if sq <= 0 or cur_shares <= 0 or ep_peak < SHORT_THRESHOLD:
+        # 期間モードは売りがあれば対象。通常は現エピソードで0.5%到達＆建玉残ありのみ
+        if period_mode:
+            if sq <= 0:
+                continue
+        elif sq <= 0 or cur_shares <= 0 or ep_peak < SHORT_THRESHOLD:
             continue
         sell_high, sell_low = sh / sq, sl / sq
         sell_mid = (sell_high + sell_low) / 2

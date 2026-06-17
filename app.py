@@ -136,6 +136,13 @@ def api_cost_band(code):
     return jsonify(cb.get('agg'))
 
 
+@app.route('/api/cost_basis/<code>')
+def api_cost_basis(code):
+    frm = request.args.get('from') or None
+    to = request.args.get('to') or None
+    return jsonify(db.short_cost_basis(code, frm, to))
+
+
 @app.route('/api/short_daily/<code>')
 def api_short_daily(code):
     return jsonify(db.get_short_daily_total(code))

@@ -79,6 +79,7 @@
   </h2>
   <div class="body">
     <div id="mainChart"></div>
+    <div id="line-inst" class="muted" style="font-size:12px;margin-top:4px">チャートのライン表示中: 全機関平均</div>
     <div id="shortChartWrap" style="display:none">
       <div class="muted" style="font-size:11px;margin-top:12px">空売り残高合計（%）</div>
       <div id="shortChart"></div>
@@ -153,15 +154,28 @@
 {% macro yen(v) %}{% if v is none %}-{% elif v|abs >= 100000000 %}{{ '{:.2f}億'.format(v/100000000) }}{% else %}{{ '{:,.0f}万'.format(v/10000) }}{% endif %}{% endmacro %}
 <div class="card" style="margin-bottom:14px">
   <h2>💰 機関の空売り/買戻し分析（増減量×その日のOHLCで逆算）
-    <span style="display:flex;gap:6px;align-items:center">
-      <span class="muted" style="font-size:11px">機関名クリックでチャート表示</span>
-      <button class="btn btn-sm btn-ghost sel" id="cost-allbtn" onclick="selectInst(-1)">全機関平均</button>
-    </span>
+    <button class="btn btn-sm btn-ghost sel" id="cost-allbtn" onclick="selectInst(-1)">全機関平均</button>
   </h2>
-  <style>#cost-tbody tr{cursor:pointer} #cost-tbody tr.sel{background:rgba(255,159,67,.18)} .btn.sel{outline:2px solid #ff9f43}</style>
+  <style>#cost-tbody tr{cursor:pointer} #cost-tbody tr.sel{background:rgba(255,159,67,.18)} .btn.sel{outline:2px solid #ff9f43}
+    #cost-period .pbtn.on{background:var(--accent);border-color:var(--accent);color:#fff}</style>
   <div class="body">
+    <!-- 期間セレクタ -->
+    <div id="cost-period" class="scan-panel" style="margin-bottom:10px;gap:8px 12px">
+      <span class="muted" style="font-size:12px">期間</span>
+      <button class="btn btn-sm btn-ghost pbtn on" data-d="ep" onclick="applyPeriod('ep')">エピソード(自動)</button>
+      <button class="btn btn-sm btn-ghost pbtn" data-d="66" onclick="applyPeriod('66')">3M</button>
+      <button class="btn btn-sm btn-ghost pbtn" data-d="130" onclick="applyPeriod('130')">6M</button>
+      <button class="btn btn-sm btn-ghost pbtn" data-d="260" onclick="applyPeriod('260')">1Y</button>
+      <button class="btn btn-sm btn-ghost pbtn" data-d="all" onclick="applyPeriod('all')">全期間</button>
+      <span class="muted" style="font-size:12px">｜指定</span>
+      <input type="date" id="cost-from" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 6px;font-size:12px">
+      <span class="muted">〜</span>
+      <input type="date" id="cost-to" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 6px;font-size:12px">
+      <button class="btn btn-sm btn-accent" onclick="applyPeriodCustom()">適用</button>
+      <span class="muted" id="cost-period-label" style="font-size:11px"></span>
+    </div>
     {% if agg %}
-    <div style="padding:10px 12px;background:rgba(255,159,67,.08);border:1px solid #5a3a2a;border-radius:8px;margin-bottom:10px;font-size:13px">
+    <div id="cost-agg-box" style="padding:10px 12px;background:rgba(255,159,67,.08);border:1px solid #5a3a2a;border-radius:8px;margin-bottom:10px;font-size:13px">
       <b>全機関 加重平均</b>
       <div style="display:flex;gap:8px 24px;flex-wrap:wrap;margin-top:6px">
         <div><span class="muted">空売り単価</span> 高<b>{{ '{:,.0f}'.format(agg.sell_high) }}</b> / 安<b>{{ '{:,.0f}'.format(agg.sell_low) }}</b></div>
@@ -265,14 +279,15 @@ async function addMemo(){
 }
 
 // ===== 自前ローソク足チャート（株価＋出来高＋空売り＋大口タグ 1対1連動） =====
-const COST = {{ cost_basis|tojson }};
-function instLines(r){
+let COST = {{ cost_basis|tojson }};
+function instLines(r, name){
   const L = [];
-  if(r && r.sell_mid) L.push({price:r.sell_mid, color:'#ff9f43', label:'空売'});
-  if(r && r.buy_mid)  L.push({price:r.buy_mid,  color:'#4fc3f7', label:'買戻'});
+  const nm = name || '';
+  if(r && r.sell_mid) L.push({price:r.sell_mid, color:'#ff9f43', label:nm+' 空売'});
+  if(r && r.buy_mid)  L.push({price:r.buy_mid,  color:'#4fc3f7', label:nm+' 買戻'});
   return L;
 }
-let CHART = null, CHART_BARS = [], CHART_SHORTS = [], CHART_LINES = instLines(COST.agg);
+let CHART = null, CHART_BARS = [], CHART_SHORTS = [], CHART_LINES = instLines(COST.agg, '全機関');
 function buildChart(marks){
   document.getElementById('shortChartWrap').style.display = CHART_SHORTS.length ? 'block' : 'none';
   CHART = makeStockChart(document.getElementById('mainChart'),
@@ -289,16 +304,81 @@ Promise.all([
     .map(d=>({time:d.date, open:d.open, high:d.high, low:d.low, close:d.close, volume:d.volume||0}));
   CHART_SHORTS = sh.map(d=>({time:d.date, value:d.total_ratio}));
   buildChart(marks);
+  if(COST && COST.agg) selectInst(-1);  // 初期キャプション設定
 });
 
 // 機関を選んでチャートに空売り/買戻し単価ラインを表示
+let SEL_INST = -1;
 function selectInst(i){
+  SEL_INST = i;
   const r = (i < 0) ? COST.agg : COST.rows[i];
-  CHART_LINES = instLines(r);
+  const name = (i < 0) ? '全機関平均' : COST.rows[i].institution;
+  CHART_LINES = instLines(r, (i < 0) ? '全機関' : name);
   if(CHART) CHART.setLines(CHART_LINES);
   document.querySelectorAll('#cost-tbody tr').forEach((tr,idx)=>tr.classList.toggle('sel', idx===i));
   const ab = document.getElementById('cost-allbtn');
   if(ab) ab.classList.toggle('sel', i<0);
+  const cap = document.getElementById('line-inst');
+  if(cap){
+    const sm = r && r.sell_mid ? r.sell_mid : '-';
+    const bm = r && r.buy_mid ? r.buy_mid : '-';
+    cap.innerHTML = `チャートのライン表示中: <b style="color:#ffd54f">${name}</b>　`+
+                    `<span style="color:#ff9f43">━ 空売 ${sm}</span>　<span style="color:#4fc3f7">━ 買戻 ${bm}</span>`;
+  }
+}
+
+// ===== 期間指定で建単価を再計算 =====
+function yen(v){ if(v==null) return '-'; const a=Math.abs(v); return a>=1e8?(v/1e8).toFixed(2)+'億':Math.round(v/1e4).toLocaleString()+'万'; }
+function nf(v){ return v==null?'-':Math.round(v).toLocaleString(); }
+function aggHtml(a){
+  const cls=v=>v>0?'rise':'fall';
+  return `<b>全機関 加重平均</b>
+  <div style="display:flex;gap:8px 24px;flex-wrap:wrap;margin-top:6px">
+    <div><span class="muted">空売り単価</span> 高<b>${nf(a.sell_high)}</b> / 安<b>${nf(a.sell_low)}</b></div>
+    <div><span class="muted">買戻し単価</span> ${a.buy_mid?'高'+nf(a.buy_high)+' / 安'+nf(a.buy_low):'-'}</div>
+    <div><span class="muted">値幅</span> 最良${a.spread_best??'-'} / 平均${a.spread_avg??'-'} / 最悪${a.spread_worst??'-'}</div>
+  </div>
+  <div style="display:flex;gap:8px 24px;flex-wrap:wrap;margin-top:6px">
+    <div><span class="muted">確定損益</span> 最良${yen(a.realized_best)} / 平均<b>${yen(a.realized_avg)}</b> / 最悪${yen(a.realized_worst)}</div>
+    <div><span class="muted">含み損益(残ポジ)</span> 最良<b class="${cls(a.unreal_best)}">${yen(a.unreal_best)}</b> / 平均<b class="${cls(a.unreal_avg)}">${yen(a.unreal_avg)}</b> / 最悪<b class="${cls(a.unreal_worst)}">${yen(a.unreal_worst)}</b></div>
+  </div>`;
+}
+function rowHtml(r,i){
+  return `<tr onclick="selectInst(${i})">
+    <td class="txt-left">${r.institution}</td><td>${r.ratio.toFixed(1)}%</td>
+    <td>${nf(r.sell_high)}<span class="muted"> / ${nf(r.sell_low)}</span></td>
+    <td class="muted">${r.buy_mid?nf(r.buy_high)+' / '+nf(r.buy_low):'-'}</td>
+    <td class="hide-sp">${r.spread_avg??'-'}</td>
+    <td class="${r.unreal_avg>0?'rise':'fall'}"><b>${yen(r.unreal_avg)}</b></td></tr>`;
+}
+function setPbtn(key){ document.querySelectorAll('#cost-period .pbtn').forEach(b=>b.classList.toggle('on', b.dataset.d===key)); }
+function renderCost(data, from, to){
+  COST = data;
+  document.getElementById('cost-period-label').textContent =
+    (from||to) ? `（${from||'最初'} 〜 ${to||'最新'}・期間集計）` : '（現エピソード自動）';
+  const box = document.getElementById('cost-agg-box');
+  if(box) box.innerHTML = data.agg ? aggHtml(data.agg) : '<span class="muted">この期間に売買なし</span>';
+  document.getElementById('cost-tbody').innerHTML =
+    data.rows.map((r,i)=>rowHtml(r,i)).join('') || '<tr><td colspan="6" class="empty">この期間に該当なし</td></tr>';
+  selectInst(-1);
+}
+function fetchCost(from,to){
+  const qs=new URLSearchParams(); if(from)qs.set('from',from); if(to)qs.set('to',to);
+  fetch('/api/cost_basis/'+CODE+'?'+qs).then(r=>r.json()).then(d=>renderCost(d,from,to));
+}
+function applyPeriod(key){
+  setPbtn(key);
+  if(key==='ep'){ fetchCost(null,null); return; }
+  if(key==='all'){ fetchCost('2000-01-01',null); return; }
+  const n=parseInt(key);
+  const from = CHART_BARS.length ? CHART_BARS[Math.max(0,CHART_BARS.length-n)].time : null;
+  fetchCost(from,null);
+}
+function applyPeriodCustom(){
+  const f=document.getElementById('cost-from').value, t=document.getElementById('cost-to').value;
+  if(!f && !t) return;
+  document.querySelectorAll('#cost-period .pbtn').forEach(b=>b.classList.remove('on'));
+  fetchCost(f||null, t||null);
 }
 
 document.querySelectorAll('.range-btn').forEach(b=>{

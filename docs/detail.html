@@ -79,6 +79,7 @@
     </h2>
     <div class="body">
       <div id="c-main"></div>
+      <div id="line-inst" class="muted" style="font-size:12px;margin-top:4px">ライン: 全機関平均</div>
       <div id="c-short-wrap" style="display:none">
         <div class="muted" style="font-size:11px;margin-top:12px">空売り残高合計（%）</div>
         <div id="c-short"></div>
@@ -192,15 +193,18 @@ fetch(`data/${code}.json`).then(r=>{
   const shorts = D.short.series.map(x=>({time:x.d, value:x.r}));
   const marks = {}; (D.tags||[]).forEach(t=>marks[t.date]=t.tag);
   const ag = (D.cost && D.cost.agg) ? D.cost.agg : null;
-  const instLines = r => { const L=[]; if(r&&r.sell_mid)L.push({price:r.sell_mid,color:'#ff9f43',label:'空売'}); if(r&&r.buy_mid)L.push({price:r.buy_mid,color:'#4fc3f7',label:'買戻'}); return L; };
+  const instLines = (r,name) => { const L=[]; const nm=name||''; if(r&&r.sell_mid)L.push({price:r.sell_mid,color:'#ff9f43',label:nm+' 空売'}); if(r&&r.buy_mid)L.push({price:r.buy_mid,color:'#4fc3f7',label:nm+' 買戻'}); return L; };
   document.getElementById('c-short-wrap').style.display = shorts.length ? 'block' : 'none';
   const CH = makeStockChart(document.getElementById('c-main'),
-                            document.getElementById('c-short'), bars, shorts, marks, instLines(ag));
+                            document.getElementById('c-short'), bars, shorts, marks, instLines(ag,'全機関'));
   window.selectInst = function(i){
     const r = (i<0) ? ag : D.cost.rows[i];
-    CH.setLines(instLines(r));
+    const name = (i<0) ? '全機関平均' : D.cost.rows[i].institution;
+    CH.setLines(instLines(r,(i<0)?'全機関':name));
     document.querySelectorAll('#b-cost tr').forEach((tr,idx)=>tr.classList.toggle('sel', idx===i));
     const ab=document.getElementById('cost-allbtn'); if(ab) ab.classList.toggle('sel', i<0);
+    const cap=document.getElementById('line-inst');
+    if(cap && r){ cap.innerHTML=`ライン: <b style="color:#ffd54f">${name}</b> <span style="color:#ff9f43">空売${r.sell_mid||'-'}</span> <span style="color:#4fc3f7">買戻${r.buy_mid||'-'}</span>`; }
   };
   document.querySelectorAll('.rbtn').forEach(b=>{
     b.onclick=()=>{document.querySelectorAll('.rbtn').forEach(x=>x.classList.remove('on'));
