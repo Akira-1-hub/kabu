@@ -324,6 +324,11 @@ def api_watch(code):
     return jsonify({'watched': True})
 
 
+@app.route('/api/watched')
+def api_watched():
+    return jsonify([w['code'] for w in db.get_watchlist()])
+
+
 @app.route('/api/memo/<code>', methods=['POST'])
 def api_memo(code):
     text = (request.json or {}).get('text', '').strip()

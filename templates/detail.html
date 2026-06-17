@@ -7,7 +7,7 @@
 
 <div class="page-title">
   <span>{{ stock.code }} {{ stock.name }}</span>
-  <button class="btn-star {% if watched %}on{% endif %}" id="watch-btn" onclick="toggleWatch()">{% if watched %}★{% else %}☆{% endif %}</button>
+  <button class="btn-star {% if watched %}on{% endif %}" id="watch-btn" onclick="toggleWatchMain()">{% if watched %}★{% else %}☆{% endif %}</button>
   <span class="spacer" style="flex:1"></span>
   <a class="btn btn-sm btn-ghost" href="/export/stock/{{ stock.code }}">CSV出力</a>
   <a class="btn btn-sm btn-ghost" href="https://kabutan.jp/stock/?code={{ stock.code }}" target="_blank">kabutan↗</a>
@@ -265,7 +265,7 @@
 <script>
 const CODE = '{{ stock.code }}';
 
-async function toggleWatch(){
+async function toggleWatchMain(){
   const r = await (await fetch('/api/watch/'+CODE,{method:'POST'})).json();
   const b = document.getElementById('watch-btn');
   b.textContent = r.watched?'★':'☆'; b.classList.toggle('on', r.watched);

@@ -71,10 +71,9 @@
         <th class="hide-sp" onclick="sortScan('volume')">出来高</th>
         <th onclick="sortScan('volume_ratio')">倍率</th>
         <th>条件</th>
-        <th></th>
       </tr></thead>
       <tbody id="scan-body">
-        <tr><td colspan="8" class="empty">▶ スキャン開始 を押してください</td></tr>
+        <tr><td colspan="7" class="empty">▶ スキャン開始 を押してください</td></tr>
       </tbody>
     </table>
   </div>
@@ -213,11 +212,11 @@ function renderScan(){
   document.getElementById('stat-hits').textContent = rows.length;
 
   if(!scanResults.length){
-    body.innerHTML = '<tr><td colspan="8" class="empty">▶ スキャン開始 で全銘柄データを取得してください</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" class="empty">▶ スキャン開始 で全銘柄データを取得してください</td></tr>';
     return;
   }
   if(!rows.length){
-    body.innerHTML = '<tr><td colspan="8" class="empty">この条件に一致する銘柄はありません（条件を緩めてください）</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" class="empty">この条件に一致する銘柄はありません（条件を緩めてください）</td></tr>';
     return;
   }
 
@@ -244,17 +243,10 @@ function renderScan(){
       <td class="hide-sp">${fmtNum(d.volume)}</td>
       <td>${d.volume_ratio!=null?d.volume_ratio.toFixed(1)+'x':'-'}</td>
       <td>${conds.length?`<span class="badge ${tag}">${conds.join(' / ')}</span>`:'-'}</td>
-      <td><button class="btn-star btn-sm" onclick="toggleWatch('${d.code}',this)">☆</button></td>
     </tr>`;}).join('');
 }
 
 function sortScan(k){ if(sortKey===k) sortDesc=!sortDesc; else {sortKey=k;sortDesc=true;} renderScan(); }
-
-async function toggleWatch(code, el){
-  const r = await (await fetch('/api/watch/'+code,{method:'POST'})).json();
-  el.textContent = r.watched ? '★' : '☆';
-  el.classList.toggle('on', r.watched);
-}
 
 // 空売りデータ状態
 async function loadShortStatus(){

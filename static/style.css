@@ -48,6 +48,9 @@ nav .search input { background: var(--bg); border: 1px solid var(--border); colo
 .btn-ghost { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
 .btn-star { background: transparent; color: var(--muted); border: 1px solid var(--border); font-size: 16px; padding: 4px 8px; }
 .btn-star.on { color: var(--both); border-color: var(--both); }
+.watch-btn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0 4px; vertical-align: middle; line-height: 1; }
+.watch-btn:hover { color: var(--both); }
+.watch-btn.on { color: var(--both); }
 
 /* ===== テーブル ===== */
 .table-wrap { overflow-x: auto; }

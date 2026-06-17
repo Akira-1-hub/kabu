@@ -37,6 +37,36 @@ function goStock(e){
 function fmtNum(n){ return n==null ? '-' : Number(n).toLocaleString(); }
 function fmtPct(n){ return n==null ? '-' : (n>=0?'+':'') + Number(n).toFixed(2) + '%'; }
 function pctClass(n){ return n==null ? '' : (n>0?'rise':(n<0?'fall':'')); }
+
+// ===== どのページの表からでもウォッチ追加（コード列に☆を自動付与） =====
+let WATCHED = new Set();
+async function toggleWatch(code, el){
+  try{
+    const r = await (await fetch('/api/watch/'+code,{method:'POST'})).json();
+    if(r.watched) WATCHED.add(code); else WATCHED.delete(code);
+    document.querySelectorAll('.watch-btn[data-code="'+code+'"]').forEach(b=>{
+      b.textContent = r.watched ? '★' : '☆'; b.classList.toggle('on', r.watched);
+    });
+  }catch(e){}
+}
+function injectStars(){
+  document.querySelectorAll('td.code a[href^="/stock/"]').forEach(a=>{
+    if(a.dataset.starred) return;
+    const m = a.getAttribute('href').match(/\/stock\/([^?#\/]+)/);
+    if(!m) return;
+    a.dataset.starred = '1';
+    const code = m[1];
+    const btn = document.createElement('button');
+    btn.className = 'watch-btn'; btn.dataset.code = code;
+    btn.textContent = WATCHED.has(code) ? '★' : '☆';
+    if(WATCHED.has(code)) btn.classList.add('on');
+    btn.title = 'ウォッチ追加/解除';
+    btn.onclick = (e)=>{ e.preventDefault(); e.stopPropagation(); toggleWatch(code, btn); };
+    a.insertAdjacentElement('afterend', btn);
+  });
+}
+fetch('/api/watched').then(r=>r.json()).then(codes=>{ WATCHED = new Set(codes); injectStars(); }).catch(()=>{});
+new MutationObserver(()=>injectStars()).observe(document.body, {childList:true, subtree:true});
 </script>
 {% block script %}{% endblock %}
 </body>
