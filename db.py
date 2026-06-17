@@ -740,19 +740,22 @@ def compute_cost_basis(price_rows, short_rows):
         bq = bh = bl = 0.0   # 買戻: 量・高値金額・安値金額
         prev = 0
         prev_date = None
+        prev_ratio = 0.0
         ep_peak = 0.0        # 現エピソードの残高割合ピーク
         for rec in recs:
             shv = rec['shares'] or 0
             rat = rec['ratio'] or 0
             d = _dt.strptime(rec['date'], '%Y-%m-%d')
-            # 長期の報告空白（>25日）＝ポジション解消→再構築 と見なし新エピソード開始
-            if prev_date is None or (d - prev_date).days > 25:
+            # 新エピソード開始＝初回 or「長期空白(>25日) かつ 直前が0.5%未満（報告義務消失で実質消滅）」
+            # 4%超を継続保有しているような銘柄は、報告の時間空白だけではリセットしない
+            if prev_date is None or ((d - prev_date).days > 25 and prev_ratio < SHORT_THRESHOLD):
                 sq = sh = sl = bq = bh = bl = 0.0
                 prev = 0
                 ep_peak = 0.0
             prev_date = d
             chg = shv - prev          # 増減量＝残高の連続差分（Excel右表と同じ定義）
             prev = shv
+            prev_ratio = rat
             ep_peak = max(ep_peak, rat)
             v = hl(rec['date'])
             if not v or chg == 0:
