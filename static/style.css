@@ -48,9 +48,9 @@ nav .search input { background: var(--bg); border: 1px solid var(--border); colo
 .btn-ghost { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
 .btn-star { background: transparent; color: var(--muted); border: 1px solid var(--border); font-size: 16px; padding: 4px 8px; }
 .btn-star.on { color: var(--both); border-color: var(--both); }
-.watch-btn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0 4px; vertical-align: middle; line-height: 1; }
-.watch-btn:hover { color: var(--both); }
-.watch-btn.on { color: var(--both); }
+.watch-btn { background: none; border: none; color: #667; cursor: pointer; font-size: 17px; padding: 0 6px; vertical-align: middle; line-height: 1; transition: transform .1s; }
+.watch-btn:hover { color: var(--both); transform: scale(1.25); }
+.watch-btn.on { color: var(--both); text-shadow: 0 0 6px rgba(255,213,79,.6); }
 
 /* ===== テーブル ===== */
 .table-wrap { overflow-x: auto; }
