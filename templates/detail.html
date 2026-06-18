@@ -45,6 +45,13 @@
     {% if fund and fund.updated %}<span class="muted">取得 {{ fund.updated }}</span>{% endif %}
   </h2>
   <div class="body">
+    {% if size_tag or stock.sector or themes %}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+      {% if size_tag %}<span class="tag tag-size">{{ size_tag }}</span>{% endif %}
+      {% if stock.sector %}<span class="tag tag-sector">{{ stock.sector }}</span>{% endif %}
+      {% for t in themes %}<span class="tag tag-theme">{{ t }}</span>{% endfor %}
+    </div>
+    {% endif %}
     <div style="display:flex;gap:10px 28px;flex-wrap:wrap;margin-bottom:10px">
       <div><span class="muted">市場</span>　<b>{{ stock.market or '-' }}</b></div>
       <div><span class="muted">業種</span>　<b>{{ stock.sector or '-' }}</b></div>

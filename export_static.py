@@ -13,6 +13,7 @@ from collections import defaultdict, OrderedDict
 from datetime import datetime
 
 import db
+import themes as themes_mod
 
 BASE = os.path.dirname(__file__)
 DOCS = os.path.join(BASE, 'docs')
@@ -125,6 +126,9 @@ def build():
             'sector': s.get('sector', ''),
             'fund': {k: fund[k] for k in ('updated', 'market_cap_oku', 'per', 'pbr',
                                            'eps', 'dividend_yield', 'description')} if fund else None,
+            'themes': themes_mod.detect_themes(
+                s.get('name'), s.get('sector'), (fund or {}).get('description')),
+            'size': themes_mod.size_tag((fund or {}).get('market_cap_oku')),
             'prices': ph,
             'short': {'series': series, 'inst': inst},
             'hits': [{'d': h['date'], 'c': h['condition'], 't': h['detail']}

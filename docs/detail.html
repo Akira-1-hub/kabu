@@ -23,6 +23,10 @@
   .price-line .px{font-size:30px;font-weight:700}
   .kv{display:flex;gap:8px 26px;flex-wrap:wrap;margin-top:10px;font-size:13px}
   .kv span.k{color:var(--muted)}
+  .tag{font-size:12px;font-weight:700;padding:4px 11px;border-radius:7px;line-height:1.2;white-space:nowrap}
+  .tag-size{background:#2f2f52;color:#cfcfe8}
+  .tag-sector{background:rgba(0,188,212,.16);color:#5fd6e8}
+  .tag-theme{background:linear-gradient(135deg,rgba(124,77,255,.28),rgba(0,188,212,.22));color:#d6c8ff;border:1px solid rgba(124,77,255,.4)}
   .tw{overflow-x:auto;max-height:420px;overflow-y:auto}
   table{width:100%;border-collapse:collapse}
   thead th{background:var(--bg3);color:var(--muted);font-size:11px;font-weight:600;padding:7px 9px;text-align:right;white-space:nowrap;position:sticky;top:0}
@@ -62,6 +66,7 @@
   <div class="card" id="fund-card" style="display:none">
     <h2>🏢 企業情報 <span class="muted" id="fund-upd"></span></h2>
     <div class="body">
+      <div id="fund-tags" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
       <div class="kv" id="fund-kv" style="margin-top:0"></div>
       <div class="desc" id="fund-desc" style="display:none"></div>
     </div>
@@ -168,10 +173,17 @@ fetch(`data/${code}.json`).then(r=>{
       <span><span class="k">出来高倍率</span> ${last.vr!=null?last.vr.toFixed(1)+'x':'-'}</span>`;
   }
 
+  // ザックリ分類タグ（規模・業種・テーマ）
+  const tagChips = [];
+  if(D.size) tagChips.push(`<span class="tag tag-size">${D.size}</span>`);
+  if(D.sector) tagChips.push(`<span class="tag tag-sector">${D.sector}</span>`);
+  (D.themes||[]).forEach(t=>tagChips.push(`<span class="tag tag-theme">${t}</span>`));
+
   // 企業情報
-  if(D.fund){
-    const f = D.fund;
+  if(D.fund || tagChips.length){
+    const f = D.fund || {};
     document.getElementById('fund-card').style.display='block';
+    document.getElementById('fund-tags').innerHTML = tagChips.join('');
     document.getElementById('fund-upd').textContent = f.updated ? '取得 '+f.updated : '';
     const cap = f.market_cap_oku==null ? '-' :
       (f.market_cap_oku>=10000 ? (f.market_cap_oku/10000).toFixed(2)+'兆円' : Math.round(f.market_cap_oku).toLocaleString()+'億円');

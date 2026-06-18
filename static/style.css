@@ -75,6 +75,14 @@ tbody td.code a { color: var(--muted); font-weight: 600; }
 .badge.both { background: rgba(255,213,79,.18); color: var(--both); }
 .badge.accent { background: rgba(124,77,255,.2); color: #b39dff; }
 
+/* ===== ザックリ分類タグ（規模・業種・テーマ） ===== */
+.tag { font-size: 12px; font-weight: 700; padding: 4px 11px; border-radius: 7px;
+  line-height: 1.2; white-space: nowrap; }
+.tag-size { background: var(--bg4); color: #cfcfe8; }
+.tag-sector { background: rgba(0,188,212,.16); color: #5fd6e8; }
+.tag-theme { background: linear-gradient(135deg, rgba(124,77,255,.28), rgba(0,188,212,.22));
+  color: #d6c8ff; border: 1px solid rgba(124,77,255,.4); }
+
 .empty { text-align: center; padding: 40px; color: var(--muted); }
 .muted { color: var(--muted); }
 .right { text-align: right; }

@@ -10,6 +10,7 @@ from datetime import datetime
 
 import db
 import fetch
+import themes as themes_mod
 
 app = Flask(__name__)
 
@@ -100,9 +101,15 @@ def stock_detail(code):
         except Exception:
             pass
 
+    themes = themes_mod.detect_themes(
+        s.get('name'), s.get('sector'), (fund or {}).get('description'))
+    size = themes_mod.size_tag((fund or {}).get('market_cap_oku'))
+
     return render_template('detail.html',
                            stock=s,
                            fund=fund,
+                           themes=themes,
+                           size_tag=size,
                            watched=db.is_watched(code),
                            history=db.get_price_history(code, 120),
                            hits=db.get_stock_hit_history(code),
