@@ -863,18 +863,21 @@ def short_top_ratio(limit=50):
     return sorted(rows, key=lambda x: x['total_ratio'], reverse=True)[:limit]
 
 
-def short_gaps(lag_days=3):
-    """空売りデータの欠損日を検出。
+def short_gaps(lag_days=3, recent_days=90):
+    """空売りデータの欠損日を検出（直近 recent_days 日のみ）。
     取引日(daily_pricesに存在する日)のうち short_selling に無い日を返す。
     祝日は daily_prices に無いので自動除外。直近lag_days(T+2開示ラグ)は除く。
+    古くて入手不能な過去の穴は対象外（直近のスキャン漏れ検知が目的）。
     """
+    from datetime import datetime, timedelta
     conn = get_conn()
     smin = conn.execute('SELECT MIN(date) d FROM short_selling').fetchone()['d']
     pmin = conn.execute('SELECT MIN(date) d FROM daily_prices').fetchone()['d']
     if not smin or not pmin:
         conn.close()
         return []
-    floor = max(smin, pmin)
+    cutoff = (datetime.now() - timedelta(days=recent_days)).strftime('%Y-%m-%d')
+    floor = max(smin, pmin, cutoff)
     trade_days = [r['date'] for r in conn.execute(
         'SELECT DISTINCT date FROM daily_prices WHERE date >= ? ORDER BY date', (floor,)
     ).fetchall()]
