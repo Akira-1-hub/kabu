@@ -233,6 +233,25 @@
 </div>
 
 <script>
+// ===== 上昇/下落の色 反転（端末ごとに記憶・表の色を入れ替え） =====
+(function(){
+  const RISE='#ff6b6b', FALL='#4fc3f7';
+  function apply(){
+    const sw = localStorage.getItem('kabu_color_swap')==='1';
+    const s = document.documentElement.style;
+    if(sw){ s.setProperty('--rise',FALL); s.setProperty('--fall',RISE); }
+    else  { s.removeProperty('--rise'); s.removeProperty('--fall'); }
+    document.querySelectorAll('.color-swap-btn').forEach(b=>b.classList.toggle('on',sw));
+    return sw;
+  }
+  window.toggleColors=function(){
+    localStorage.setItem('kabu_color_swap', localStorage.getItem('kabu_color_swap')==='1'?'0':'1');
+    apply();
+    if(window.refreshChartColors) window.refreshChartColors();
+  };
+  apply();
+})();
+
 // ===== 共通フォーマッタ =====
 function fmtNum(n){ return n==null ? '-' : Number(n).toLocaleString(); }
 function fmtPct(n){ return n==null ? '-' : (n>=0?'+':'') + Number(n).toFixed(2) + '%'; }

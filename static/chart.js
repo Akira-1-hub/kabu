@@ -7,7 +7,17 @@
  返り値: { setDays(n) }   n<=0で全期間
 */
 function makeStockChart(priceEl, shortEl, bars, shorts, marks, lines) {
-  const UP = '#ff6b6b', DOWN = '#4fc3f7';
+  // 上昇/下落色は CSS変数(--rise/--fall)から取得 → 反転ボタンで入れ替え可能
+  function cssVar(name, fb) {
+    try { const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim(); return v || fb; }
+    catch (e) { return fb; }
+  }
+  function rgba(hex, al) {
+    const m = (hex || '').replace('#', '');
+    if (m.length < 6) return hex;
+    return `rgba(${parseInt(m.slice(0,2),16)},${parseInt(m.slice(2,4),16)},${parseInt(m.slice(4,6),16)},${al})`;
+  }
+  let UP = cssVar('--rise', '#ff6b6b'), DOWN = cssVar('--fall', '#4fc3f7');
   const GRID = '#20203a', AXIS = '#8888aa', CROSS = '#9aa0c0';
   const PADR = 56;                 // 右の価格軸ぶん
   const hasShort = shorts && shorts.length > 0;
@@ -48,6 +58,7 @@ function makeStockChart(priceEl, shortEl, bars, shorts, marks, lines) {
   let hover = null;          // クロスヘアのバーindex
   let hoverPane = null;      // 'p' or 's'
   let mouseY = 0;
+  let tipX = 8, tipY = 8;    // ツールチップ位置（priceEl基準・カーソル追従）
 
   function dpr() { return window.devicePixelRatio || 1; }
   function fit(cv) {
@@ -115,7 +126,7 @@ function makeStockChart(priceEl, shortEl, bars, shorts, marks, lines) {
     for (let i = a; i <= b; i++) {
       const x = xCenter(i, plotW), bar = bars[i];
       const vh = vMax ? (bar.volume || 0) / vMax * volH : 0;
-      ctx.fillStyle = (bar.close >= bar.open) ? 'rgba(255,107,107,.35)' : 'rgba(79,195,247,.35)';
+      ctx.fillStyle = (bar.close >= bar.open) ? rgba(UP, .35) : rgba(DOWN, .35);
       ctx.fillRect(x - cw / 2, vBase - vh, cw, vh);
     }
 
@@ -245,6 +256,15 @@ function makeStockChart(priceEl, shortEl, bars, shorts, marks, lines) {
       `出来高 ${fmtVol(d.volume || 0)}` +
       (sv != null ? ` ／ 空売り <b style="color:${UP}">${sv.toFixed(2)}%</b>` : '');
     tip.style.display = 'block';
+    // カーソル近くに配置（priceEl内に収まるようクランプ）
+    const pw = cP.clientWidth, ph = cP.clientHeight;
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    let lx = tipX + 14, ty = tipY + 12;
+    if (lx + tw > pw - 4) lx = tipX - tw - 14;   // 右が切れるなら左へ
+    if (lx < 2) lx = 2;
+    if (ty + th > ph - 2) ty = ph - th - 2;       // 下が切れるなら上へ
+    if (ty < 2) ty = 2;
+    tip.style.left = lx + 'px'; tip.style.top = ty + 'px';
   }
 
   // ---- 操作（ズーム/パン/クロスヘア・両ペイン共通） ----
@@ -296,6 +316,10 @@ function makeStockChart(priceEl, shortEl, bars, shorts, marks, lines) {
       const { idx } = idxAtX(cv, e.clientX);
       hover = Math.max(a, Math.min(b, idx));
       hoverPane = pane; mouseY = e.clientY - r.top;
+      // ツールチップをカーソル位置へ（tipはpriceEl内なのでcP基準に換算）
+      const pr = cP.getBoundingClientRect();
+      tipX = e.clientX - pr.left;
+      tipY = (pane === 'p') ? (e.clientY - pr.top) : 8;
       draw();
     });
     cv.addEventListener('mouseleave', () => { hover = null; hoverPane = null; draw(); });
@@ -338,7 +362,8 @@ function makeStockChart(priceEl, shortEl, bars, shorts, marks, lines) {
   }
 
   function setLines(arr) { LINES = arr || []; draw(); }
+  function refreshColors() { UP = cssVar('--rise', '#ff6b6b'); DOWN = cssVar('--fall', '#4fc3f7'); draw(); }
 
   draw();
-  return { setDays, setLines };
+  return { setDays, setLines, refreshColors };
 }

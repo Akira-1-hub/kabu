@@ -10,7 +10,7 @@ import os
 import shutil
 import sys
 from collections import defaultdict, OrderedDict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import db
 import themes as themes_mod
@@ -25,6 +25,11 @@ SHORT_POINTS = 300   # 空売り推移の点数
 
 def jnum(x):
     return None if x is None else (round(float(x), 4) if isinstance(x, float) else x)
+
+
+def cost_slice(c):
+    """compute_cost_basis の結果を公開用に間引く"""
+    return {'agg': c['agg'], 'rows': c['rows'][:15], 'close': c['close']}
 
 
 def build():
@@ -127,8 +132,20 @@ def build():
                 for k, v in state.items() if v[0] >= db.SHORT_THRESHOLD]
         inst.sort(key=lambda x: x['ratio'], reverse=True)
 
-        # 推定建単価（在庫データから純関数で計算）
-        cost = db.compute_cost_basis(prices_by_code.get(code, []), shorts_by_code.get(code, []))
+        # 推定建単価（在庫データから純関数で計算）。エピソード=デフォルト＋期間別
+        price_rows = prices_by_code.get(code, [])
+        short_rows = shorts_by_code.get(code, [])
+        cost = db.compute_cost_basis(price_rows, short_rows)
+        costp = None
+        if short_rows:
+            ld = datetime.strptime(max(r['date'] for r in short_rows), '%Y-%m-%d')
+            def _cb(days, _ld=ld):
+                frm = (_ld - timedelta(days=days)).strftime('%Y-%m-%d')
+                return cost_slice(db.compute_cost_basis(price_rows, short_rows, from_date=frm))
+            costp = {
+                '3m': _cb(91), '6m': _cb(183), '1y': _cb(365),
+                'all': cost_slice(db.compute_cost_basis(price_rows, short_rows, from_date='0001-01-01')),
+            }
 
         fund = funds.get(code)
         detail = {
@@ -146,7 +163,8 @@ def build():
             'hits': [{'d': h['date'], 'c': h['condition'], 't': h['detail']}
                      for h in hits_by_code.get(code, [])],
             'tags': tags_by_code.get(code, []),
-            'cost': {'agg': cost['agg'], 'rows': cost['rows'][:15], 'close': cost['close']},
+            'cost': cost_slice(cost),
+            'costp': costp,
         }
         with open(os.path.join(SITE, 'data', f'{code}.json'), 'w', encoding='utf-8') as f:
             json.dump(detail, f, ensure_ascii=False, separators=(',', ':'))

@@ -82,6 +82,7 @@
       <button class="btn btn-sm btn-ghost range-btn on" data-d="130">6M</button>
       <button class="btn btn-sm btn-ghost range-btn" data-d="250">1Y</button>
       <button class="btn btn-sm btn-ghost range-btn" data-d="0">全部</button>
+      <button class="btn btn-sm btn-ghost color-swap-btn" onclick="toggleColors()" title="上昇/下落の色を反転" style="margin-left:8px">🔁 色反転</button>
     </span>
   </h2>
   <div class="body">
@@ -113,7 +114,8 @@
     </div>
   </div>
 </div>
-<style>.range-btn.on{background:var(--accent);border-color:var(--accent);color:#fff}</style>
+<style>.range-btn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.color-swap-btn.on{background:var(--accent2);border-color:var(--accent2);color:#fff}</style>
 
 <div class="grid grid-2">
   <!-- 条件ヒット履歴 -->
@@ -299,6 +301,7 @@ function buildChart(marks){
   document.getElementById('shortChartWrap').style.display = CHART_SHORTS.length ? 'block' : 'none';
   CHART = makeStockChart(document.getElementById('mainChart'),
                          document.getElementById('shortChart'), CHART_BARS, CHART_SHORTS, marks, CHART_LINES);
+  window.refreshChartColors = () => { if (CHART) CHART.refreshColors(); };
   const on = document.querySelector('.range-btn.on');
   CHART.setDays(on ? parseInt(on.dataset.d) : 130);
 }

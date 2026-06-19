@@ -107,6 +107,7 @@
         <button class="btn rbtn on" data-d="130">6M</button>
         <button class="btn rbtn" data-d="250">1Y</button>
         <button class="btn rbtn" data-d="0">全部</button>
+        <button class="btn color-swap-btn" onclick="toggleColors()" title="上昇/下落の色を反転" style="margin-left:8px">🔁 色反転</button>
       </span>
     </h2>
     <div class="body">
@@ -118,7 +119,9 @@
       </div>
     </div>
   </div>
-  <style>.rbtn.on{background:var(--accent);border-color:var(--accent);color:#fff}</style>
+  <style>.rbtn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .color-swap-btn.on{background:var(--accent2);border-color:var(--accent2);color:#fff}
+  .cost-period-btn.on{background:#ff9f43;border-color:#ff9f43;color:#1a1a2e;font-weight:700}</style>
 
   <div class="card" id="tag-card" style="display:none">
     <h2>🏷 大口傾向タグ（記録）<span class="muted">チャートに ▲買 ●中立 ▼売</span></h2>
@@ -136,6 +139,15 @@
         <button class="btn sel" id="cost-allbtn" style="font-size:11px;padding:4px 8px" onclick="selectInst(-1)">全機関平均</button>
       </span>
     </h2>
+    <div style="padding:6px 12px;display:flex;gap:5px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--border)">
+      <span class="muted" style="font-size:11px">期間</span>
+      <button class="btn cost-period-btn on" data-cp="episode" onclick="setCostPeriod('episode',this)" style="font-size:11px;padding:4px 8px">エピソード</button>
+      <button class="btn cost-period-btn" data-cp="3m" onclick="setCostPeriod('3m',this)" style="font-size:11px;padding:4px 8px">3M</button>
+      <button class="btn cost-period-btn" data-cp="6m" onclick="setCostPeriod('6m',this)" style="font-size:11px;padding:4px 8px">6M</button>
+      <button class="btn cost-period-btn" data-cp="1y" onclick="setCostPeriod('1y',this)" style="font-size:11px;padding:4px 8px">1Y</button>
+      <button class="btn cost-period-btn" data-cp="all" onclick="setCostPeriod('all',this)" style="font-size:11px;padding:4px 8px">全期間</button>
+      <span class="muted" id="cost-period-note" style="font-size:11px;margin-left:6px"></span>
+    </div>
     <div id="cost-agg" style="padding:8px 12px;background:rgba(255,159,67,.08);font-size:12.5px;line-height:1.7"></div>
     <div class="tw"><table>
       <thead><tr><th class="l">機関</th><th>残高%</th><th>空売単価<br>高/安</th><th>買戻単価<br>高/安</th><th class="hide-sp">値幅</th><th>含み損益<br>平均</th></tr></thead>
@@ -180,6 +192,25 @@
 </div>
 
 <script>
+// ===== 上昇/下落の色 反転（端末ごとに記憶） =====
+(function(){
+  const RISE='#ff6b6b', FALL='#4fc3f7';
+  function apply(){
+    const sw = localStorage.getItem('kabu_color_swap')==='1';
+    const s = document.documentElement.style;
+    if(sw){ s.setProperty('--rise',FALL); s.setProperty('--fall',RISE); }
+    else  { s.removeProperty('--rise'); s.removeProperty('--fall'); }
+    document.querySelectorAll('.color-swap-btn').forEach(b=>b.classList.toggle('on',sw));
+    return sw;
+  }
+  window.toggleColors=function(){
+    localStorage.setItem('kabu_color_swap', localStorage.getItem('kabu_color_swap')==='1'?'0':'1');
+    apply();
+    if(window.refreshChartColors) window.refreshChartColors();
+  };
+  apply();
+})();
+
 const code = new URLSearchParams(location.search).get('code') || '';
 const fmtN = n => n==null?'-':Number(n).toLocaleString();
 const fmtP = n => n==null?'-':(n>=0?'+':'')+Number(n).toFixed(2)+'%';
@@ -254,19 +285,23 @@ fetch(`data/${code}.json`).then(r=>{
     .map(x=>({time:x.d, open:x.o, high:x.h, low:x.l, close:x.c, volume:x.v||0}));
   const shorts = D.short.series.map(x=>({time:x.d, value:x.r}));
   const marks = {}; (D.tags||[]).forEach(t=>marks[t.date]=t.tag);
-  const ag = (D.cost && D.cost.agg) ? D.cost.agg : null;
+  let activeCost = D.cost || {agg:null, rows:[], close:null};
+  let ag = activeCost.agg || null;
   const instLines = (r,name) => { const L=[]; const nm=name||''; if(r&&r.sell_mid)L.push({price:r.sell_mid,color:'#ff9f43',label:nm+' 空売'}); if(r&&r.buy_mid)L.push({price:r.buy_mid,color:'#4fc3f7',label:nm+' 買戻'}); return L; };
   document.getElementById('c-short-wrap').style.display = shorts.length ? 'block' : 'none';
   const CH = makeStockChart(document.getElementById('c-main'),
                             document.getElementById('c-short'), bars, shorts, marks, instLines(ag,'全機関'));
+  window.refreshChartColors = () => { if (CH) CH.refreshColors(); };
+
   window.selectInst = function(i){
-    const r = (i<0) ? ag : D.cost.rows[i];
-    const name = (i<0) ? '全機関平均' : D.cost.rows[i].institution;
+    const r = (i<0) ? ag : activeCost.rows[i];
+    const name = (i<0) ? '全機関平均' : activeCost.rows[i].institution;
     CH.setLines(instLines(r,(i<0)?'全機関':name));
     document.querySelectorAll('#b-cost tr').forEach((tr,idx)=>tr.classList.toggle('sel', idx===i));
     const ab=document.getElementById('cost-allbtn'); if(ab) ab.classList.toggle('sel', i<0);
     const cap=document.getElementById('line-inst');
     if(cap && r){ cap.innerHTML=`ライン: <b style="color:#ffd54f">${name}</b> <span style="color:#ff9f43">空売${r.sell_mid||'-'}</span> <span style="color:#4fc3f7">買戻${r.buy_mid||'-'}</span>`; }
+    else if(cap){ cap.textContent='ライン: 全機関平均'; }
   };
   document.querySelectorAll('.rbtn').forEach(b=>{
     b.onclick=()=>{document.querySelectorAll('.rbtn').forEach(x=>x.classList.remove('on'));
@@ -274,26 +309,49 @@ fetch(`data/${code}.json`).then(r=>{
   });
   CH.setDays(130);
 
-  // 機関の空売り/買戻し分析（閲覧用）
+  // 機関の空売り/買戻し分析（期間切替対応・閲覧用）
   const yen = v => v==null?'-':(Math.abs(v)>=1e8?(v/1e8).toFixed(2)+'億':Math.round(v/1e4).toLocaleString()+'万');
-  if(D.cost && D.cost.rows && D.cost.rows.length){
-    document.getElementById('cost-card').style.display='block';
-    document.getElementById('cost-cur').textContent = `現在 ${Math.round(D.cost.close).toLocaleString()}`;
+  const PERIOD_LABEL = {episode:'継続保有エピソード', '3m':'直近3ヶ月', '6m':'直近6ヶ月', '1y':'直近1年', all:'全期間'};
+  function renderCostCard(){
+    ag = activeCost.agg || null;
+    if(!activeCost.rows || !activeCost.rows.length){
+      document.getElementById('cost-cur').textContent = activeCost.close?`現在 ${Math.round(activeCost.close).toLocaleString()}`:'';
+      document.getElementById('cost-agg').innerHTML = '<span class="muted">この期間の空売り/買戻しはありません</span>';
+      document.getElementById('b-cost').innerHTML = '<tr><td colspan="6" class="empty">データなし</td></tr>';
+      return;
+    }
+    document.getElementById('cost-cur').textContent = `現在 ${Math.round(activeCost.close).toLocaleString()}`;
     if(ag){
-      const cls = v => v>0?'rise':'fall';
+      const c2 = v => v>0?'rise':'fall';
       document.getElementById('cost-agg').innerHTML =
         `<b>全機関加重平均</b>　空売り単価 高<b>${Math.round(ag.sell_high)}</b>/安<b>${Math.round(ag.sell_low)}</b>　`+
         `買戻し単価 ${ag.buy_mid?'高'+Math.round(ag.buy_high)+'/安'+Math.round(ag.buy_low):'-'}　`+
         `値幅 ${ag.spread_best??'-'}/${ag.spread_avg??'-'}/${ag.spread_worst??'-'}<br>`+
         `確定損益 平均<b>${yen(ag.realized_avg)}</b>　`+
-        `含み損益 平均<b class="${cls(ag.unreal_avg)}">${yen(ag.unreal_avg)}</b>（＋=含み益/−=含み損）`;
-    }
-    document.getElementById('b-cost').innerHTML = D.cost.rows.map((r,i)=>`<tr onclick="selectInst(${i})" style="cursor:pointer">
+        `含み損益 平均<b class="${c2(ag.unreal_avg)}">${yen(ag.unreal_avg)}</b>（＋=含み益/−=含み損）`;
+    } else { document.getElementById('cost-agg').innerHTML = '<span class="muted">集計なし</span>'; }
+    document.getElementById('b-cost').innerHTML = activeCost.rows.map((r,i)=>`<tr onclick="selectInst(${i})" style="cursor:pointer">
       <td class="l">${r.institution}</td><td>${r.ratio.toFixed(1)}%</td>
       <td>${Math.round(r.sell_high).toLocaleString()}<span class="muted">/${Math.round(r.sell_low).toLocaleString()}</span></td>
       <td class="muted">${r.buy_mid?Math.round(r.buy_high)+'/'+Math.round(r.buy_low):'-'}</td>
       <td class="hide-sp">${r.spread_avg??'-'}</td>
       <td class="${r.unreal_avg>0?'rise':'fall'}"><b>${yen(r.unreal_avg)}</b></td></tr>`).join('');
+  }
+  window.setCostPeriod = function(key, btn){
+    const src = (key==='episode') ? D.cost
+              : ((D.costp && D.costp[key]) ? D.costp[key] : {agg:null, rows:[], close:(D.cost&&D.cost.close)});
+    activeCost = src || {agg:null, rows:[], close:null};
+    document.querySelectorAll('.cost-period-btn').forEach(b=>b.classList.toggle('on', b===btn));
+    const note=document.getElementById('cost-period-note'); if(note) note.textContent = PERIOD_LABEL[key]||'';
+    renderCostCard();
+    selectInst(-1);   // ライン=全機関平均にリセット
+  };
+
+  // 初期表示（エピソード）。期間データが無ければ期間ボタンは隠す
+  if(D.cost && D.cost.rows && D.cost.rows.length){
+    document.getElementById('cost-card').style.display='block';
+    if(!D.costp){ document.querySelectorAll('.cost-period-btn').forEach(b=>{ if(b.dataset.cp!=='episode') b.style.display='none'; }); }
+    renderCostCard();
   }
 
   // 大口タグ履歴（閲覧用）
