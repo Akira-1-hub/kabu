@@ -40,19 +40,46 @@
   .desc{font-size:12.5px;line-height:1.7;color:#bbbbd5;border-top:1px solid var(--border);padding-top:8px;margin-top:8px}
   .btn{background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  /* ナビ（ツール共通の見た目） */
+  nav{background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:4px;padding:0 12px;position:sticky;top:0;z-index:50;flex-wrap:wrap}
+  nav .brand{font-weight:700;font-size:15px;padding:12px 14px 12px 4px;color:var(--text);white-space:nowrap}
+  nav a.tab{padding:12px 14px;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap}
+  nav a.tab:hover{color:var(--text);text-decoration:none}
+  nav .spacer{flex:1}
+  nav .search{display:flex;align-items:center;gap:6px;padding:6px}
+  nav .search input{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;width:130px;font-size:13px}
+  .page-title{font-size:18px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .watch-btn{background:none;border:none;color:#667;cursor:pointer;font-size:22px;padding:0 4px;line-height:1}
+  .watch-btn.on{color:var(--both);text-shadow:0 0 6px rgba(255,213,79,.6)}
+  textarea{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-size:13px;resize:vertical;font-family:inherit}
   @media(max-width:700px){.grid2{grid-template-columns:1fr}.hide-sp{display:none}}
 </style>
 </head>
 <body>
 
-<header>
-  <a href="index.html" class="btn">← 一覧へ</a>
-  <h1 id="title">読み込み中...</h1>
-  <span style="margin-left:auto"></span>
-  <a id="kabutan" class="btn" target="_blank">kabutan↗</a>
-</header>
+<nav>
+  <span class="brand">📈 投資DB <span class="muted" style="font-size:11px;font-weight:400">閲覧用</span></span>
+  <a class="tab" href="index.html#dashboard">ダッシュボード</a>
+  <a class="tab" href="index.html#stocks">銘柄一覧</a>
+  <a class="tab" href="index.html#gainers">上昇率</a>
+  <a class="tab" href="index.html#rankings">ランキング</a>
+  <a class="tab" href="index.html#short">空売り</a>
+  <a class="tab" href="index.html#watch">ウォッチ</a>
+  <span class="spacer"></span>
+  <form class="search" onsubmit="return goStock(event)">
+    <input type="text" id="search-code" placeholder="銘柄コード" inputmode="numeric">
+    <button class="btn" type="submit">検索</button>
+  </form>
+</nav>
 
 <div class="wrap">
+
+  <div class="page-title">
+    <span id="title">読み込み中...</span>
+    <button class="watch-btn" id="watch-main" title="ウォッチ追加/解除" onclick="toggleWatchMain()">☆</button>
+    <span class="spacer" style="flex:1"></span>
+    <a id="kabutan" class="btn" target="_blank">kabutan↗</a>
+  </div>
 
   <div class="card"><div class="body">
     <div class="price-line">
@@ -142,6 +169,14 @@
     </table></div>
   </div>
 
+  <div class="card">
+    <h2>📝 メモ <span class="muted">この端末に保存（閲覧用）</span></h2>
+    <div class="body">
+      <textarea id="memo" rows="4" placeholder="この銘柄のメモ（ブラウザ内に保存）" oninput="saveMemo()"></textarea>
+      <div class="muted" id="memo-status" style="font-size:11px;margin-top:4px"></div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -151,6 +186,21 @@ const fmtP = n => n==null?'-':(n>=0?'+':'')+Number(n).toFixed(2)+'%';
 const cls  = n => n==null?'':(n>0?'rise':(n<0?'fall':''));
 
 document.getElementById('kabutan').href = `https://kabutan.jp/stock/?code=${code}`;
+
+// 検索（ナビ）
+function goStock(e){ e.preventDefault(); const c=document.getElementById('search-code').value.trim(); if(c) location.href='detail.html?code='+c; return false; }
+
+// ウォッチ（localStorage・端末ごと）
+const WKEY='kabu_watch';
+let WATCHED=new Set(JSON.parse(localStorage.getItem(WKEY)||'[]'));
+function refreshWatchBtn(){ const b=document.getElementById('watch-main'); if(!b) return; const on=WATCHED.has(code); b.textContent=on?'★':'☆'; b.classList.toggle('on',on); }
+function toggleWatchMain(){ if(WATCHED.has(code)) WATCHED.delete(code); else WATCHED.add(code); localStorage.setItem(WKEY,JSON.stringify([...WATCHED])); refreshWatchBtn(); }
+refreshWatchBtn();
+
+// メモ（localStorage・端末ごと）
+const MKEY='kabu_memo_'+code;
+(function(){ const ta=document.getElementById('memo'); if(ta) ta.value=localStorage.getItem(MKEY)||''; })();
+function saveMemo(){ const ta=document.getElementById('memo'); localStorage.setItem(MKEY, ta.value); document.getElementById('memo-status').textContent='保存しました '+new Date().toLocaleTimeString(); }
 
 fetch(`data/${code}.json`).then(r=>{
   if(!r.ok) throw new Error('no data');

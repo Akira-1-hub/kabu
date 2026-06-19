@@ -52,6 +52,12 @@ def build():
     tags_by_code = defaultdict(list)
     for r in conn.execute('SELECT code,date,tag,memo FROM flow_tags ORDER BY code, date DESC'):
         tags_by_code[r['code']].append({'date': r['date'], 'tag': r['tag'], 'memo': r['memo']})
+    # ダッシュボード「最近の大口タグ」用（全銘柄を日付降順）
+    recent_tags = [{'date': r['date'], 'code': r['code'],
+                    'name': stocks.get(r['code'], {}).get('name', ''),
+                    'tag': r['tag'], 'memo': r['memo']}
+                   for r in conn.execute(
+                       'SELECT code,date,tag,memo FROM flow_tags ORDER BY date DESC, code LIMIT 30').fetchall()]
     conn.close()
 
     # ---- 一覧 data.json ----
@@ -64,7 +70,8 @@ def build():
             'pct': p['change_pct'], 'vol': p['volume'], 'ratio': p['volume_ratio'],
         })
 
-    short_sum = {'latest': db.short_max_date(), 'top': db.short_top_ratio(50)}
+    short_sum = {'latest': db.short_max_date(), 'top': db.short_top_ratio(50),
+                 'meta': db.short_data_range(), 'gaps': db.short_gaps()}
     for period in ('daily', 'weekly', 'thisweek'):
         rank = db.short_change_ranking(period, limit=50)
         new = db.short_new_entries(period, limit=50)
@@ -81,6 +88,9 @@ def build():
         'short': short_sum,
         'hits30': db.get_hit_count_ranking(30)[:50],
         'gainers': db.gainers_ranking(limit=100),
+        'gainers_down': db.gainers_ranking(limit=100, falling=True),
+        'recent_tags': recent_tags,
+        'flow_label': db.FLOW_LABEL,
     }
     with open(os.path.join(SITE, 'data.json'), 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
@@ -147,10 +157,11 @@ def build():
         src = os.path.join(DOCS, fn)
         if os.path.exists(src):
             shutil.copy2(src, os.path.join(SITE, fn))
-    # チャートエンジン
-    chart_src = os.path.join(BASE, 'static', 'chart.js')
-    if os.path.exists(chart_src):
-        shutil.copy2(chart_src, os.path.join(SITE, 'chart.js'))
+    # スタイル（ツールと共通）＆チャートエンジン
+    for fn in ('style.css', 'chart.js'):
+        src = os.path.join(BASE, 'static', fn)
+        if os.path.exists(src):
+            shutil.copy2(src, os.path.join(SITE, fn))
     # Jekyll処理を無効化（_ファイルや高速配信のため）
     open(os.path.join(SITE, '.nojekyll'), 'w').close()
 

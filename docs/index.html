@@ -4,291 +4,537 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>投資DB - 閲覧用</title>
+<link rel="stylesheet" href="style.css">
 <style>
-  :root {
-    --bg:#0f0f1a; --bg2:#1a1a2e; --bg3:#252540; --text:#e0e0f0; --muted:#8888aa;
-    --border:#2a2a4a; --rise:#ff6b6b; --fall:#4fc3f7; --both:#ffd54f; --accent:#7c4dff; --accent2:#00bcd4;
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--bg);color:var(--text);font-family:'Segoe UI','Yu Gothic UI',sans-serif;font-size:13px;line-height:1.5}
-  a{color:var(--accent2);text-decoration:none}
-  header{background:var(--bg2);border-bottom:1px solid var(--border);padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:0;z-index:10}
-  header h1{font-size:15px}
-  header .upd{color:var(--muted);font-size:11px;margin-left:auto}
-  .tabs{display:flex;gap:6px;padding:10px 14px;flex-wrap:wrap;background:var(--bg2);border-bottom:1px solid var(--border)}
-  .tabs button{background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 14px;cursor:pointer;font-size:13px}
-  .tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
-  .wrap{padding:12px;max-width:1300px;margin:0 auto}
+  /* 静的ビューア固有 */
   .panel{display:none}
   .panel.on{display:block}
-  .filters{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px}
-  .filters label{color:var(--muted);font-size:12px}
-  .filters input,.filters select{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:5px 8px;font-size:12px}
-  .filters input[type=number]{width:64px}
-  .card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:14px}
-  .card h2{font-size:13px;color:var(--muted);padding:9px 12px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;justify-content:space-between}
-  .tw{overflow-x:auto;max-height:520px;overflow-y:auto}
-  table{width:100%;border-collapse:collapse;min-width:520px}
-  thead th{background:var(--bg3);color:var(--muted);font-size:11px;font-weight:600;padding:7px 9px;text-align:right;cursor:pointer;white-space:nowrap;position:sticky;top:0}
-  thead th.l{text-align:left}
-  tbody td{padding:6px 9px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border)}
-  tbody td.l{text-align:left}
-  tbody tr:hover{background:var(--bg3)}
-  .rise{color:var(--rise)} .fall{color:var(--fall)} .both{color:var(--both);font-weight:700}
-  .badge{font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(124,77,255,.2);color:#b39dff}
-  .empty{text-align:center;padding:36px;color:var(--muted)}
-  .muted{color:var(--muted)}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .cnt{color:var(--muted);font-size:12px;margin-left:auto}
-  @media(max-width:700px){.grid2{grid-template-columns:1fr}.hide-sp{display:none}table{min-width:430px}}
+  nav .upd{font-size:11px;color:var(--muted);padding:0 8px;white-space:nowrap}
+  td.code a{color:var(--muted);font-weight:600}
+  .mat{white-space:normal;max-width:520px}
+  .mat div{font-size:12px}
 </style>
 </head>
 <body>
-
-<header>
-  <h1>📈 投資DB <span class="muted" style="font-size:11px">閲覧用</span></h1>
+<nav>
+  <span class="brand">📈 投資DB <span class="muted" style="font-size:11px;font-weight:400">閲覧用</span></span>
+  <a class="tab" data-tab="dashboard" href="#dashboard">ダッシュボード</a>
+  <a class="tab" data-tab="stocks" href="#stocks">銘柄一覧</a>
+  <a class="tab" data-tab="gainers" href="#gainers">上昇率</a>
+  <a class="tab" data-tab="rankings" href="#rankings">ランキング</a>
+  <a class="tab" data-tab="short" href="#short">空売り</a>
+  <a class="tab" data-tab="watch" href="#watch">ウォッチ</a>
+  <span class="spacer"></span>
   <span class="upd" id="updated">読み込み中...</span>
-</header>
+  <form class="search" onsubmit="return goStock(event)">
+    <input type="text" id="search-code" placeholder="銘柄コード" inputmode="numeric">
+    <button class="btn btn-sm btn-ghost" type="submit">検索</button>
+  </form>
+</nav>
 
-<div class="tabs">
-  <button class="on" data-p="screen">スクリーニング</button>
-  <button data-p="gainers">上昇率</button>
-  <button data-p="short">空売り</button>
-  <button data-p="hits">継続出現</button>
-</div>
+<div class="container">
 
-<div class="wrap">
-
-  <!-- スクリーニング -->
-  <div class="panel on" id="p-screen">
-    <div class="filters" id="stats" style="gap:8px 22px">
-      <span class="muted">読み込み中...</span>
+  <!-- ===== ダッシュボード ===== -->
+  <div class="panel" id="p-dashboard">
+    <div class="page-title">📊 ダッシュボード
+      <span class="muted" style="font-size:12px;font-weight:400">閲覧用（データはローカルツールで更新）</span>
     </div>
-    <div class="filters">
-      <label>前日比±</label><input type="number" id="f-pct" value="3" step="0.5" oninput="renderScreen()">
-      <label>%以上</label>
-      <label>出来高</label><input type="number" id="f-ratio" value="2" step="0.5" oninput="renderScreen()">
-      <label>倍以上</label>
-      <select id="f-mode" onchange="renderScreen()">
-        <option value="both">両条件一致</option><option value="any">どちらか</option><option value="none">全件</option>
-      </select>
-      <input type="text" id="f-kw" placeholder="コード/銘柄名" oninput="renderScreen()" style="width:130px">
-      <span class="cnt" id="f-cnt"></span>
+    <div class="scan-panel">
+      <span class="badge accent">絞り込み</span>
+      <div class="fld"><label>前日比±</label><input type="number" id="d-pct" value="3" step="0.5" min="0" oninput="renderDash()"><label>%以上</label></div>
+      <div class="fld"><label>出来高</label><input type="number" id="d-surge" value="2" step="0.5" min="0" oninput="renderDash()"><label>倍以上</label></div>
+      <div class="fld"><select id="d-mode" onchange="renderDash()"><option value="both">両条件一致</option><option value="any">どちらか</option><option value="none">条件なし(全件)</option></select></div>
+      <div class="fld"><input type="text" id="d-kw" placeholder="コード/銘柄名" oninput="renderDash()" style="width:140px"></div>
+      <span class="spacer" style="flex:1"></span>
+      <span class="muted" id="d-count" style="font-size:12px"></span>
     </div>
-    <div class="card">
-      <div class="tw">
+    <div class="grid grid-3" style="margin:14px 0">
+      <div class="stat"><div class="num" id="d-stat-hits">-</div><div class="lbl">条件ヒット</div></div>
+      <div class="stat"><div class="num" id="d-stat-watch">-</div><div class="lbl">ウォッチ銘柄</div></div>
+      <div class="stat"><div class="num" id="d-stat-hit30">-</div><div class="lbl">継続出現銘柄(30日)</div></div>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <h2>📉 空売り残高データ（JPX）</h2>
+      <div class="body">
+        <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center">
+          <div><span class="muted">累計</span> <b id="d-sh-total">-</b> 件</div>
+          <div><span class="muted">銘柄数</span> <b id="d-sh-codes">-</b></div>
+          <div><span class="muted">日数</span> <b id="d-sh-days">-</b></div>
+          <div><span class="muted">最新計算日</span> <b id="d-sh-date">-</b></div>
+          <div id="d-sh-gap"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <h2>スクリーニング結果（絞り込み条件で表示）</h2>
+      <div class="table-wrap">
         <table>
           <thead><tr>
-            <th class="l" onclick="sortScreen('code')">コード</th><th class="l" onclick="sortScreen('name')">銘柄名</th>
-            <th onclick="sortScreen('close')">終値</th><th onclick="sortScreen('pct')">前日比%</th>
-            <th class="hide-sp" onclick="sortScreen('vol')">出来高</th><th onclick="sortScreen('ratio')">倍率</th>
+            <th class="txt-left" onclick="dashSort('code')">コード</th>
+            <th class="txt-left" onclick="dashSort('name')">銘柄名</th>
+            <th onclick="dashSort('close')">終値</th>
+            <th onclick="dashSort('pct')">前日比%</th>
+            <th class="hide-sp" onclick="dashSort('vol')">出来高</th>
+            <th onclick="dashSort('ratio')">倍率</th>
+            <th>条件</th>
           </tr></thead>
-          <tbody id="b-screen"></tbody>
+          <tbody id="d-screen"></tbody>
         </table>
       </div>
     </div>
+    <div class="grid grid-2">
+      <div class="card">
+        <h2>🔁 継続出現ランキング（直近30日）</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>出現回数</th><th class="hide-sp">最終</th></tr></thead>
+          <tbody id="d-hits"></tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <h2>⭐ ウォッチリスト <span><a href="#watch">すべて表示</a></span></h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th class="hide-sp">前日比%</th></tr></thead>
+          <tbody id="d-watch"></tbody>
+        </table></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <h2>🏷 最近の大口タグ（moomoo確認の記録）</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="txt-left">日付</th><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th class="txt-left">傾向</th><th class="txt-left">メモ</th></tr></thead>
+        <tbody id="d-tags"></tbody>
+      </table></div>
+    </div>
   </div>
 
-  <!-- 上昇率 -->
+  <!-- ===== 銘柄一覧 ===== -->
+  <div class="panel" id="p-stocks">
+    <div class="page-title">📋 銘柄一覧 <span class="muted" style="font-size:13px;font-weight:400">（最新スナップショット）</span></div>
+    <div class="scan-panel">
+      <div class="fld"><label>絞込</label><input type="text" id="s-kw" placeholder="コード/銘柄名" oninput="renderStocks()" style="width:160px"></div>
+      <div class="fld"><label>前日比</label><input type="number" id="s-pct" placeholder="±%以上" oninput="renderStocks()" style="width:80px"></div>
+      <div class="fld"><label>出来高倍率</label><input type="number" id="s-surge" placeholder="倍以上" oninput="renderStocks()" style="width:80px"></div>
+      <span class="spacer" style="flex:1"></span>
+      <span class="muted" id="s-count" style="font-size:12px"></span>
+    </div>
+    <div class="card"><div class="table-wrap"><table>
+      <thead><tr>
+        <th class="txt-left" onclick="stkSort('code')">コード</th>
+        <th class="txt-left" onclick="stkSort('name')">銘柄名</th>
+        <th onclick="stkSort('close')">終値</th>
+        <th onclick="stkSort('change')">前日比</th>
+        <th onclick="stkSort('pct')">前日比%</th>
+        <th class="hide-sp" onclick="stkSort('vol')">出来高</th>
+        <th onclick="stkSort('ratio')">倍率</th>
+        <th class="hide-sp" onclick="stkSort('date')">日付</th>
+      </tr></thead>
+      <tbody id="s-body"></tbody>
+    </table></div></div>
+  </div>
+
+  <!-- ===== 上昇率 ===== -->
   <div class="panel" id="p-gainers">
-    <div class="filters"><span class="cnt" id="gn-range"></span></div>
-    <div class="card"><h2>📈 本日上昇率ランキング（材料＝TDnet適時開示）</h2><div class="tw"><table>
-      <thead><tr><th>空売り%</th><th class="hide-sp">営業利益率</th><th class="l">コード</th><th class="l">銘柄名</th><th>上昇率</th><th class="hide-sp">終値</th><th class="l">材料（適時開示）</th></tr></thead>
-      <tbody id="b-gainers"></tbody></table></div></div>
+    <div class="page-title" id="gn-title">📈 本日上昇率ランキング
+      <span class="muted" id="gn-range" style="font-size:13px;font-weight:400"></span>
+      <span class="spacer" style="flex:1"></span>
+      <button class="btn btn-sm btn-accent" id="gn-up" onclick="setGainDir('up')">上昇率</button>
+      <button class="btn btn-sm btn-ghost" id="gn-down" onclick="setGainDir('down')">値下がり率</button>
+    </div>
+    <div class="card"><div class="table-wrap"><table>
+      <thead><tr>
+        <th>空売り比率</th><th class="hide-sp">営業利益率</th>
+        <th class="txt-left">コード</th><th class="txt-left">銘柄名</th>
+        <th>上昇率</th><th class="hide-sp">終値</th><th class="hide-sp">出来高倍率</th>
+        <th class="txt-left">材料（適時開示）</th>
+      </tr></thead>
+      <tbody id="gn-body"></tbody>
+    </table></div></div>
+    <div class="muted" style="font-size:11px;margin-top:8px">
+      ※材料は TDnet（適時開示）の直近開示をコード一致で表示。空売り比率は機関の現在残高合計（2%以上を赤）。営業利益率は会社予想。
+    </div>
   </div>
 
-  <!-- 空売り -->
+  <!-- ===== ランキング ===== -->
+  <div class="panel" id="p-rankings">
+    <div class="page-title">🏆 ランキング</div>
+    <div class="grid grid-2">
+      <div class="card"><h2>📈 値上がり率</h2><div class="table-wrap" style="max-height:480px;overflow-y:auto"><table>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>前日比%</th><th class="hide-sp">終値</th></tr></thead>
+        <tbody id="r-rise"></tbody></table></div></div>
+      <div class="card"><h2>📉 値下がり率</h2><div class="table-wrap" style="max-height:480px;overflow-y:auto"><table>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>前日比%</th><th class="hide-sp">終値</th></tr></thead>
+        <tbody id="r-fall"></tbody></table></div></div>
+      <div class="card"><h2>🔥 出来高急増</h2><div class="table-wrap" style="max-height:480px;overflow-y:auto"><table>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>倍率</th><th class="hide-sp">出来高</th></tr></thead>
+        <tbody id="r-surge"></tbody></table></div></div>
+      <div class="card"><h2>🔁 継続出現（30日）</h2><div class="table-wrap" style="max-height:480px;overflow-y:auto"><table>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>回数</th><th class="hide-sp">最終</th></tr></thead>
+        <tbody id="r-hit"></tbody></table></div></div>
+    </div>
+  </div>
+
+  <!-- ===== 空売り ===== -->
   <div class="panel" id="p-short">
-    <div class="filters">
-      <label>期間</label>
-      <select id="s-period" onchange="renderShort()">
+    <div class="page-title">📉 空売り残高ランキング
+      <span class="muted" id="sh-range" style="font-size:13px;font-weight:400"></span>
+    </div>
+    <div class="scan-panel" style="gap:8px">
+      <span class="badge accent">期間</span>
+      <select id="sh-period" onchange="renderShort()" class="">
         <option value="daily">デイリー（前日比）</option>
         <option value="weekly">週間（1週間前比）</option>
         <option value="thisweek">今週（週初比）</option>
       </select>
-      <span class="cnt" id="s-range"></span>
+      <span class="spacer" style="flex:1"></span>
+      <span class="muted" id="sh-info" style="font-size:12px"></span>
     </div>
-    <div class="card" style="border-color:#5a3a2a">
-      <h2 style="background:linear-gradient(90deg,rgba(255,107,107,.15),var(--bg3))">🔥 踏み上げ警戒（空売り増加 × 株価上昇）<span class="cnt" id="sq-cnt"></span></h2>
-      <div class="tw"><table>
-        <thead><tr><th class="l">コード</th><th class="l">銘柄名</th><th>踏み上げ度</th><th>空売り増</th><th>残高%</th><th class="hide-sp">新規</th><th>期間騰落</th><th class="hide-sp">続伸</th><th class="hide-sp">機関</th></tr></thead>
+    <div class="card" style="margin-bottom:14px;border-color:#5a3a2a">
+      <h2 style="background:linear-gradient(90deg,rgba(255,107,107,.15),var(--bg3))">🔥 踏み上げ警戒（空売り増加 × 株価上昇）<span class="muted" id="sq-cnt"></span></h2>
+      <div class="table-wrap" style="max-height:560px;overflow-y:auto"><table>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>踏み上げ度</th><th>空売り増</th><th>残高%</th><th class="hide-sp">新規</th><th>期間騰落</th><th class="hide-sp">続伸</th><th class="hide-sp">機関</th></tr></thead>
         <tbody id="b-sq"></tbody></table></div>
     </div>
-    <div class="card" style="border-color:#2a5a3a">
-      <h2 style="background:linear-gradient(90deg,rgba(76,175,80,.15),var(--bg3))">🚀 踏み上げ進行中（買戻し × 上昇トレンド）<span class="cnt" id="cv-cnt"></span></h2>
-      <div class="tw"><table>
-        <thead><tr><th class="l">コード</th><th class="l">銘柄名</th><th>進行度</th><th>買戻し</th><th>残高%</th><th>期間騰落</th><th class="hide-sp">続伸</th><th class="hide-sp">機関</th></tr></thead>
+    <div class="card" style="margin-bottom:14px;border-color:#2a5a3a">
+      <h2 style="background:linear-gradient(90deg,rgba(76,175,80,.15),var(--bg3))">🚀 踏み上げ進行中（買戻し × 上昇トレンド）<span class="muted" id="cv-cnt"></span></h2>
+      <div class="table-wrap" style="max-height:560px;overflow-y:auto"><table>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>進行度</th><th>買戻し</th><th>残高%</th><th>期間騰落</th><th class="hide-sp">続伸</th><th class="hide-sp">機関</th></tr></thead>
         <tbody id="b-cv"></tbody></table></div>
     </div>
-    <div class="grid2">
-      <div class="card"><h2>🔼 空売り増加</h2><div class="tw"><table>
-        <thead><tr><th class="l">コード</th><th class="l">銘柄名</th><th>残高%</th><th class="hide-sp">前回%</th><th>増減</th></tr></thead>
+    <div class="grid grid-2">
+      <div class="card"><h2>🔼 空売り増加（積み上がり）</h2><div class="table-wrap" style="max-height:520px;overflow-y:auto"><table>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>残高%</th><th class="hide-sp">前回%</th><th>増減</th></tr></thead>
         <tbody id="b-inc"></tbody></table></div></div>
-      <div class="card"><h2>🔽 空売り減少（買い戻し）</h2><div class="tw"><table>
-        <thead><tr><th class="l">コード</th><th class="l">銘柄名</th><th>残高%</th><th class="hide-sp">前回%</th><th>増減</th></tr></thead>
+      <div class="card"><h2>🔽 空売り減少（買い戻し）</h2><div class="table-wrap" style="max-height:520px;overflow-y:auto"><table>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>残高%</th><th class="hide-sp">前回%</th><th>増減</th></tr></thead>
         <tbody id="b-dec"></tbody></table></div></div>
     </div>
-    <div class="card"><h2>🆕 新規空売り</h2><div class="tw"><table>
-      <thead><tr><th class="l">コード</th><th class="l">銘柄名</th><th class="l">機関</th><th>残高%</th><th class="hide-sp">建玉日</th></tr></thead>
-      <tbody id="b-new"></tbody></table></div></div>
-    <div class="card"><h2>🏔 残高割合トップ</h2><div class="tw"><table>
-      <thead><tr><th class="l">コード</th><th class="l">銘柄名</th><th>残高%</th><th class="hide-sp">株数</th><th>機関数</th></tr></thead>
-      <tbody id="b-top"></tbody></table></div></div>
+    <div class="card" style="margin-top:14px"><h2>🆕 新規空売り（この期間に新たに建てられたポジション）<span class="muted" id="nw-cnt"></span></h2>
+      <div class="table-wrap" style="max-height:480px;overflow-y:auto"><table>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th class="txt-left">新規参入した機関</th><th>残高%</th><th class="hide-sp">建玉日</th></tr></thead>
+        <tbody id="b-new"></tbody></table></div>
+    </div>
+    <div class="card" style="margin-top:14px"><h2>🏔 空売り残高割合トップ（積み上がっている銘柄）</h2>
+      <div class="table-wrap" style="max-height:420px;overflow-y:auto"><table>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>残高割合</th><th class="hide-sp">残高株数</th><th>機関数</th><th class="hide-sp">計算日</th></tr></thead>
+        <tbody id="b-top"></tbody></table></div>
+    </div>
   </div>
 
-  <!-- 継続出現 -->
-  <div class="panel" id="p-hits">
-    <div class="card"><h2>🔁 継続出現ランキング（直近30日に条件ヒットした回数）</h2><div class="tw"><table>
-      <thead><tr><th class="l">コード</th><th class="l">銘柄名</th><th>回数</th><th class="hide-sp">最終</th></tr></thead>
-      <tbody id="b-hits"></tbody></table></div></div>
+  <!-- ===== ウォッチ ===== -->
+  <div class="panel" id="p-watch">
+    <div class="page-title">⭐ ウォッチリスト <span class="muted" id="w-cnt" style="font-size:13px;font-weight:400"></span></div>
+    <div class="card"><div class="table-wrap"><table>
+      <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>終値</th><th>前日比%</th><th class="hide-sp">出来高倍率</th><th></th></tr></thead>
+      <tbody id="w-body"></tbody>
+    </table></div></div>
+    <div class="muted" style="font-size:11px;margin-top:8px">※ウォッチはこのブラウザ内に保存されます（端末ごと）。各表のコード横の☆で追加/解除できます。</div>
   </div>
 
 </div>
 
 <script>
-let D = null;
-let sKey='pct', sDesc=true;
+// ===== 共通フォーマッタ =====
+function fmtNum(n){ return n==null ? '-' : Number(n).toLocaleString(); }
+function fmtPct(n){ return n==null ? '-' : (n>=0?'+':'') + Number(n).toFixed(2) + '%'; }
+function pctClass(n){ return n==null ? '' : (n>0?'rise':(n<0?'fall':'')); }
+function lk(code,label){ return `<a href="detail.html?code=${code}">${label==null?code:label}</a>`; }
+function goStock(e){ e.preventDefault(); const c=document.getElementById('search-code').value.trim(); if(c) location.href='detail.html?code='+c; return false; }
 
-const fmtN = n => n==null?'-':Number(n).toLocaleString();
-const fmtP = n => n==null?'-':(n>=0?'+':'')+Number(n).toFixed(2)+'%';
-const cls  = n => n==null?'':(n>0?'rise':(n<0?'fall':''));
-const lk   = (c,t) => `<a href="detail.html?code=${c}" style="color:inherit">${t}</a>`;
-
-fetch('data.json').then(r=>r.json()).then(d=>{
-  D = d;
-  document.getElementById('updated').textContent = '更新: ' + d.updated;
-  const up3 = d.prices.filter(p=>(p.pct||0)>=3).length;
-  const dn3 = d.prices.filter(p=>(p.pct||0)<=-3).length;
-  const v2  = d.prices.filter(p=>(p.ratio||0)>=2).length;
-  document.getElementById('stats').innerHTML = `
-    <span><span class="muted">収集</span> <b>${d.prices.length.toLocaleString()}</b>銘柄</span>
-    <span><span class="muted">+3%↑</span> <b class="rise">${up3}</b></span>
-    <span><span class="muted">-3%↓</span> <b class="fall">${dn3}</b></span>
-    <span><span class="muted">出来高2x↑</span> <b class="both">${v2}</b></span>
-    <span><span class="muted">空売り最新</span> <b>${d.short.latest||'-'}</b></span>`;
-  renderScreen(); renderShort(); renderHits(); renderGainers();
-}).catch(e=>{
-  document.getElementById('updated').textContent = 'data.json が読めません';
-});
-
-function renderGainers(){
-  if(!D || !D.gainers) return;
-  const g = D.gainers;
-  document.getElementById('gn-range').textContent = `${g.date||'-'}（材料: TDnet ${g.disc_date||'-'}）`;
-  document.getElementById('b-gainers').innerHTML = (g.rows||[]).map(r=>`<tr>
-    <td class="${r.short_ratio>=2?'rise':'muted'}">${r.short_ratio!=null?r.short_ratio.toFixed(2)+'%':''}</td>
-    <td class="hide-sp ${r.op_margin!=null&&r.op_margin<0?'fall':''}">${r.op_margin!=null?r.op_margin.toFixed(1)+'%':'-'}</td>
-    <td class="l muted">${lk(r.code,r.code)}</td><td class="l">${lk(r.code,r.name||'-')}</td>
-    <td class="${r.change_pct>0?'rise':'fall'}"><b>${fmtP(r.change_pct)}</b></td>
-    <td class="hide-sp">${fmtN(r.close)}</td>
-    <td class="l" style="white-space:normal">${(r.materials||[]).map(m=>`<div style="font-size:12px">${m}</div>`).join('')}</td>
-  </tr>`).join('') || '<tr><td colspan="6" class="empty">なし</td></tr>';
+// ===== ウォッチ（localStorage） =====
+const WKEY='kabu_watch';
+let WATCHED=new Set(JSON.parse(localStorage.getItem(WKEY)||'[]'));
+function saveWatch(){ localStorage.setItem(WKEY, JSON.stringify([...WATCHED])); }
+function toggleWatch(code, el){
+  if(WATCHED.has(code)) WATCHED.delete(code); else WATCHED.add(code);
+  saveWatch();
+  document.querySelectorAll('.watch-btn[data-code="'+code+'"]').forEach(b=>{
+    const on=WATCHED.has(code); b.textContent=on?'★':'☆'; b.classList.toggle('on',on);
+  });
+  renderWatch(); renderDashWatch();
 }
+function injectStars(){
+  document.querySelectorAll('td.code a').forEach(a=>{
+    if(a.dataset.starred) return;
+    const m=(a.getAttribute('href')||'').match(/code=([^&]+)/);
+    if(!m) return;
+    a.dataset.starred='1';
+    const code=m[1];
+    const btn=document.createElement('button');
+    btn.className='watch-btn'; btn.dataset.code=code;
+    btn.textContent=WATCHED.has(code)?'★':'☆';
+    if(WATCHED.has(code)) btn.classList.add('on');
+    btn.title='ウォッチ追加/解除';
+    btn.onclick=(e)=>{e.preventDefault();e.stopPropagation();toggleWatch(code,btn);};
+    a.insertAdjacentElement('afterend', btn);
+  });
+}
+new MutationObserver(()=>injectStars()).observe(document.body,{childList:true,subtree:true});
 
-// タブ
-document.querySelectorAll('.tabs button').forEach(b=>{
-  b.onclick = ()=>{
-    document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('on'));
-    document.querySelectorAll('.panel').forEach(x=>x.classList.remove('on'));
-    b.classList.add('on');
-    document.getElementById('p-'+b.dataset.p).classList.add('on');
-  };
-});
+// ===== タブ =====
+const TABS=['dashboard','stocks','gainers','rankings','short','watch'];
+function currentTab(){ const h=location.hash.replace('#',''); return TABS.includes(h)?h:'dashboard'; }
+function showTab(t){
+  TABS.forEach(x=>{
+    document.getElementById('p-'+x).classList.toggle('on', x===t);
+    document.querySelector('.tab[data-tab="'+x+'"]').classList.toggle('active', x===t);
+  });
+  if(t==='watch') renderWatch();
+  window.scrollTo(0,0);
+}
+window.addEventListener('hashchange', ()=>showTab(currentTab()));
 
-function renderScreen(){
+// ===== データ =====
+let D=null;
+let dPrices=[];          // 一覧用
+let dSortK='pct', dSortD=true;   // ダッシュボード絞り込み
+let sSortK='pct', sSortD=true;   // 銘柄一覧
+let gainDir='up';
+
+fetch('data.json').then(r=>r.json()).then(j=>{
+  D=j;
+  document.getElementById('updated').textContent = '更新 '+(j.updated||'-');
+  dPrices = (j.prices||[]).map(p=>({code:p.code,name:p.name,date:p.date,close:p.close,
+                                    change:p.change,pct:p.pct,vol:p.vol,ratio:p.ratio}));
+  renderDash(); renderStocks(); renderGainers(); renderRankings(); renderShort();
+  showTab(currentTab());
+}).catch(e=>{ document.getElementById('updated').textContent='data.json 読込失敗'; });
+
+// ===== ダッシュボード =====
+function nameOf(d){ return d.name||''; }
+function dashSort(k){ if(dSortK===k) dSortD=!dSortD; else {dSortK=k;dSortD=true;} renderDash(); }
+function renderDash(){
   if(!D) return;
-  const pct = parseFloat(document.getElementById('f-pct').value);
-  const ratio = parseFloat(document.getElementById('f-ratio').value);
-  const mode = document.getElementById('f-mode').value;
-  const kw = document.getElementById('f-kw').value.trim();
-
-  let rows = D.prices.filter(d=>{
+  const minPct=parseFloat(document.getElementById('d-pct').value);
+  const surge =parseFloat(document.getElementById('d-surge').value);
+  const mode  =document.getElementById('d-mode').value;
+  const kw    =document.getElementById('d-kw').value.trim();
+  let rows=dPrices.filter(d=>{
     if(kw && !((d.code||'').includes(kw)||(d.name||'').includes(kw))) return false;
-    const hp = Math.abs(d.pct||0) >= (isNaN(pct)?0:pct);
-    const hr = (d.ratio||0) >= (isNaN(ratio)?0:ratio);
-    return mode==='both' ? (hp&&hr) : mode==='any' ? (hp||hr) : true;
+    const hp=Math.abs(d.pct||0)>=(isNaN(minPct)?0:minPct);
+    const hs=(d.ratio||0)>=(isNaN(surge)?0:surge);
+    if(mode==='both') return hp&&hs;
+    if(mode==='any')  return hp||hs;
+    return true;
   });
-  document.getElementById('f-cnt').textContent = `${rows.length}件 / 全${D.prices.length}件`;
+  document.getElementById('d-count').textContent = `${rows.length}件 / 全${dPrices.length}件`;
+  document.getElementById('d-stat-hits').textContent = rows.length;
+  document.getElementById('d-stat-watch').textContent = WATCHED.size;
+  document.getElementById('d-stat-hit30').textContent = (D.hits30||[]).length;
+  rows.sort((a,b)=>{ let av=a[dSortK],bv=b[dSortK];
+    if(dSortK==='name'){av=nameOf(a);bv=nameOf(b);}
+    if(typeof av==='string'){return dSortD?(bv||'').localeCompare(av):(av||'').localeCompare(bv);}
+    av=av==null?-1e18:av; bv=bv==null?-1e18:bv; return dSortD?bv-av:av-bv; });
+  const body=document.getElementById('d-screen');
+  body.innerHTML = rows.slice(0,500).map(d=>{
+    const hp=Math.abs(d.pct||0)>=(isNaN(minPct)?0:minPct);
+    const hs=(d.ratio||0)>=(isNaN(surge)?0:surge);
+    const tag=(hp&&hs)?'both':(hp?(d.pct>0?'rise':'fall'):(hs?'accent':''));
+    const conds=[]; if(hp)conds.push(`前日比${d.pct>=0?'+':''}${(d.pct||0).toFixed(1)}%`);
+    if(hs)conds.push(`出来高${(d.ratio||0).toFixed(1)}x`);
+    return `<tr>
+      <td class="txt-left code">${lk(d.code,d.code)}</td>
+      <td class="txt-left ${tag}"><a href="detail.html?code=${d.code}" style="color:inherit">${d.name||'-'}</a></td>
+      <td>${fmtNum(d.close)}</td>
+      <td class="${pctClass(d.pct)}">${fmtPct(d.pct)}</td>
+      <td class="hide-sp">${fmtNum(d.vol)}</td>
+      <td>${d.ratio!=null?d.ratio.toFixed(1)+'x':'-'}</td>
+      <td>${conds.length?`<span class="badge ${tag}">${conds.join(' / ')}</span>`:'-'}</td>
+    </tr>`; }).join('') || '<tr><td colspan="7" class="empty">条件に一致する銘柄がありません</td></tr>';
 
-  rows.sort((a,b)=>{
-    let av=a[sKey], bv=b[sKey];
-    if(typeof av==='string') return sDesc?(bv||'').localeCompare(av):(av||'').localeCompare(bv);
-    av=av??-1e18; bv=bv??-1e18;
-    return sDesc?bv-av:av-bv;
-  });
+  // 空売りメタ
+  const m=(D.short&&D.short.meta)||{};
+  document.getElementById('d-sh-total').textContent = m.n!=null?m.n.toLocaleString():'-';
+  document.getElementById('d-sh-codes').textContent = m.codes!=null?m.codes.toLocaleString():'-';
+  document.getElementById('d-sh-days').textContent  = m.days!=null?m.days.toLocaleString():'-';
+  document.getElementById('d-sh-date').textContent  = (D.short&&D.short.latest)||'-';
+  const gaps=(D.short&&D.short.gaps)||[];
+  document.getElementById('d-sh-gap').innerHTML = gaps.length
+    ? `<b style="color:#ff9f43">⚠ 欠損${gaps.length}日</b> <span class="muted" style="font-size:11px">${gaps.join(', ')}</span>`
+    : `<span style="color:#2ecc71">✓ 欠損なし</span>`;
 
-  document.getElementById('b-screen').innerHTML = rows.slice(0,300).map(d=>`<tr>
-    <td class="l muted">${lk(d.code,d.code)}</td>
-    <td class="l">${lk(d.code,d.name||'-')}</td>
-    <td>${fmtN(d.close)}</td>
-    <td class="${cls(d.pct)}">${fmtP(d.pct)}</td>
-    <td class="hide-sp">${fmtN(d.vol)}</td>
-    <td>${d.ratio!=null?d.ratio.toFixed(1)+'x':'-'}</td>
-  </tr>`).join('') || '<tr><td colspan="6" class="empty">該当なし</td></tr>';
+  // 継続出現
+  document.getElementById('d-hits').innerHTML = (D.hits30||[]).slice(0,10).map(r=>`<tr>
+    <td class="txt-left code">${lk(r.code,r.code)}</td>
+    <td class="txt-left"><a href="detail.html?code=${r.code}" style="color:inherit">${r.name||'-'}</a></td>
+    <td><span class="badge accent">${r.hit_count}回</span></td>
+    <td class="hide-sp muted">${r.last_date||''}</td></tr>`).join('')
+    || '<tr><td colspan="4" class="empty">データなし</td></tr>';
+
+  renderDashWatch();
+
+  // 大口タグ
+  const fc={buy:'#2ecc71',neutral:'#95a5a6',sell:'#ff9f43'};
+  const fl=(D.flow_label)||{buy:'買い優勢',neutral:'中立',sell:'売り優勢'};
+  document.getElementById('d-tags').innerHTML = (D.recent_tags||[]).map(t=>`<tr>
+    <td class="txt-left muted">${t.date}</td>
+    <td class="txt-left code">${lk(t.code,t.code)}</td>
+    <td class="txt-left"><a href="detail.html?code=${t.code}" style="color:inherit">${t.name||'-'}</a></td>
+    <td class="txt-left"><b style="color:${fc[t.tag]||'#fff'}">${fl[t.tag]||t.tag}</b></td>
+    <td class="txt-left muted">${t.memo||''}</td></tr>`).join('')
+    || '<tr><td colspan="5" class="empty">記録なし</td></tr>';
 }
-function sortScreen(k){ if(sKey===k)sDesc=!sDesc; else{sKey=k;sDesc=true;} renderScreen(); }
-
-function renderShort(){
+function renderDashWatch(){
   if(!D) return;
-  const p = document.getElementById('s-period').value;
-  const S = D.short[p];
-  document.getElementById('s-range').textContent = `基準 ${S.from} → 最新 ${D.short.latest}`;
+  const pm={}; dPrices.forEach(p=>pm[p.code]=p);
+  const list=[...WATCHED].map(c=>pm[c]).filter(Boolean);
+  document.getElementById('d-watch').innerHTML = list.slice(0,10).map(d=>`<tr>
+    <td class="txt-left code">${lk(d.code,d.code)}</td>
+    <td class="txt-left"><a href="detail.html?code=${d.code}" style="color:inherit">${d.name||'-'}</a></td>
+    <td class="hide-sp ${pctClass(d.pct)}">${fmtPct(d.pct)}</td></tr>`).join('')
+    || '<tr><td colspan="3" class="empty">各表の☆で登録できます</td></tr>';
+  const sw=document.getElementById('d-stat-watch'); if(sw) sw.textContent=WATCHED.size;
+}
 
-  // 踏み上げ警戒
-  const sq = S.squeeze || [];
+// ===== 銘柄一覧 =====
+function stkSort(k){ if(sSortK===k) sSortD=!sSortD; else {sSortK=k;sSortD=true;} renderStocks(); }
+function renderStocks(){
+  if(!D) return;
+  const kw=document.getElementById('s-kw').value.trim();
+  const fpct=parseFloat(document.getElementById('s-pct').value);
+  const fsurge=parseFloat(document.getElementById('s-surge').value);
+  let rows=dPrices.filter(d=>{
+    if(kw && !((d.code||'').includes(kw)||(d.name||'').includes(kw))) return false;
+    if(!isNaN(fpct) && Math.abs(d.pct||0)<fpct) return false;
+    if(!isNaN(fsurge) && (d.ratio||0)<fsurge) return false;
+    return true;
+  });
+  rows.sort((a,b)=>{ let av=a[sSortK],bv=b[sSortK];
+    if(sSortK==='name'){av=nameOf(a);bv=nameOf(b);}
+    if(typeof av==='string'){return sSortD?(bv||'').localeCompare(av):(av||'').localeCompare(bv);}
+    av=av==null?-1e18:av; bv=bv==null?-1e18:bv; return sSortD?bv-av:av-bv; });
+  document.getElementById('s-count').textContent = `${rows.length}件`;
+  document.getElementById('s-body').innerHTML = rows.slice(0,500).map(d=>`<tr>
+    <td class="txt-left code">${lk(d.code,d.code)}</td>
+    <td class="txt-left"><a href="detail.html?code=${d.code}" style="color:inherit">${d.name||'-'}</a></td>
+    <td>${fmtNum(d.close)}</td>
+    <td class="${pctClass(d.change)}">${d.change!=null?(d.change>=0?'+':'')+d.change:'-'}</td>
+    <td class="${pctClass(d.pct)}">${fmtPct(d.pct)}</td>
+    <td class="hide-sp">${fmtNum(d.vol)}</td>
+    <td>${d.ratio!=null?d.ratio.toFixed(1)+'x':'-'}</td>
+    <td class="hide-sp muted">${d.date||'-'}</td></tr>`).join('')
+    || '<tr><td colspan="8" class="empty">データなし</td></tr>';
+}
+
+// ===== 上昇率 =====
+function setGainDir(dir){ gainDir=dir;
+  document.getElementById('gn-up').className='btn btn-sm '+(dir==='up'?'btn-accent':'btn-ghost');
+  document.getElementById('gn-down').className='btn btn-sm '+(dir==='down'?'btn-accent':'btn-ghost');
+  renderGainers();
+}
+function renderGainers(){
+  if(!D) return;
+  const g=(gainDir==='down'?D.gainers_down:D.gainers)||{rows:[]};
+  document.getElementById('gn-title').firstChild.textContent =
+    (gainDir==='down'?'📉 本日値下がり率ランキング ':'📈 本日上昇率ランキング ');
+  document.getElementById('gn-range').textContent = `${g.date||'-'}（材料: TDnet ${g.disc_date||'-'}）`;
+  document.getElementById('gn-body').innerHTML = (g.rows||[]).map(r=>`<tr>
+    <td class="${r.short_ratio&&r.short_ratio>=2?'rise':'muted'}">${r.short_ratio!=null?r.short_ratio.toFixed(2)+'%':''}</td>
+    <td class="hide-sp ${r.op_margin!=null&&r.op_margin<0?'fall':''}">${r.op_margin!=null?r.op_margin.toFixed(1)+'%':'-'}</td>
+    <td class="txt-left code">${lk(r.code,r.code)}</td>
+    <td class="txt-left"><a href="detail.html?code=${r.code}" style="color:inherit">${r.name||'-'}</a></td>
+    <td class="${(r.change_pct||0)>0?'rise':'fall'}"><b>${(r.change_pct>=0?'+':'')+(r.change_pct||0).toFixed(2)}%</b></td>
+    <td class="hide-sp">${r.close!=null?Math.round(r.close).toLocaleString():'-'}</td>
+    <td class="hide-sp">${r.volume_ratio!=null?r.volume_ratio.toFixed(1)+'x':'-'}</td>
+    <td class="txt-left mat">${(r.materials||[]).map(m=>`<div>${m}</div>`).join('')}</td></tr>`).join('')
+    || '<tr><td colspan="8" class="empty">データなし</td></tr>';
+}
+
+// ===== ランキング（pricesから算出） =====
+function rrow(d,kind){
+  if(kind==='surge') return `<tr><td class="txt-left code">${lk(d.code,d.code)}</td>
+    <td class="txt-left"><a href="detail.html?code=${d.code}" style="color:inherit">${d.name||'-'}</a></td>
+    <td><span class="badge accent">${(d.ratio||0).toFixed(1)}x</span></td><td class="hide-sp">${fmtNum(d.vol)}</td></tr>`;
+  return `<tr><td class="txt-left code">${lk(d.code,d.code)}</td>
+    <td class="txt-left"><a href="detail.html?code=${d.code}" style="color:inherit">${d.name||'-'}</a></td>
+    <td class="${pctClass(d.pct)}">${fmtPct(d.pct)}</td><td class="hide-sp">${d.close!=null?Math.round(d.close).toLocaleString():'-'}</td></tr>`;
+}
+function renderRankings(){
+  if(!D) return;
+  const withPct=dPrices.filter(d=>d.pct!=null);
+  const rise=[...withPct].sort((a,b)=>b.pct-a.pct).slice(0,30);
+  const fall=[...withPct].sort((a,b)=>a.pct-b.pct).slice(0,30);
+  const surge=dPrices.filter(d=>d.ratio!=null).sort((a,b)=>b.ratio-a.ratio).slice(0,30);
+  document.getElementById('r-rise').innerHTML = rise.map(d=>rrow(d,'rise')).join('') || '<tr><td colspan="4" class="empty">なし</td></tr>';
+  document.getElementById('r-fall').innerHTML = fall.map(d=>rrow(d,'fall')).join('') || '<tr><td colspan="4" class="empty">なし</td></tr>';
+  document.getElementById('r-surge').innerHTML = surge.map(d=>rrow(d,'surge')).join('') || '<tr><td colspan="4" class="empty">なし</td></tr>';
+  document.getElementById('r-hit').innerHTML = (D.hits30||[]).slice(0,30).map(r=>`<tr>
+    <td class="txt-left code">${lk(r.code,r.code)}</td>
+    <td class="txt-left"><a href="detail.html?code=${r.code}" style="color:inherit">${r.name||'-'}</a></td>
+    <td><span class="badge accent">${r.hit_count}回</span></td>
+    <td class="hide-sp muted">${r.last_date||''}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">なし</td></tr>';
+}
+
+// ===== 空売り =====
+function renderShort(){
+  if(!D||!D.short) return;
+  const period=document.getElementById('sh-period').value;
+  const S=D.short[period]||{};
+  document.getElementById('sh-range').textContent = S.from?`基準 ${S.from} → 最新 ${D.short.latest}`:'';
+  const m=D.short.meta||{};
+  document.getElementById('sh-info').textContent = m.n!=null?`累計${m.n.toLocaleString()}件 / ${m.codes}銘柄`:'';
+
+  const sq=S.squeeze||[];
   document.getElementById('sq-cnt').textContent = `${sq.length}件 / 株価${S.price_latest||'-'}`;
   document.getElementById('b-sq').innerHTML = sq.map(r=>`<tr>
-    <td class="l muted">${lk(r.code,r.code)}</td><td class="l">${lk(r.code,r.name||'-')}</td>
+    <td class="txt-left code">${lk(r.code,r.code)}</td>
+    <td class="txt-left"><a href="detail.html?code=${r.code}" style="color:inherit">${r.name||'-'}</a></td>
     <td><b class="both" style="font-size:14px">${r.score}</b></td>
     <td class="rise">+${r.short_delta.toFixed(2)}pt${r.is_surge?' 🔥':''}</td>
     <td><b>${r.cur_ratio.toFixed(1)}%</b></td>
     <td class="hide-sp">${r.new_n?`<span class="rise">🆕${r.new_n}</span>`:'<span class="muted">-</span>'}</td>
     <td class="rise"><b>+${r.price_gain.toFixed(1)}%</b></td>
     <td class="hide-sp muted">${r.up_days}日</td>
-    <td class="hide-sp muted">${r.inst}</td>
-  </tr>`).join('') || '<tr><td colspan="9" class="empty">該当なし</td></tr>';
+    <td class="hide-sp muted">${r.inst}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">該当なし</td></tr>';
 
-  // 踏み上げ進行中（買戻し×上昇トレンド）
-  const cv = S.cover || [];
+  const cv=S.cover||[];
   document.getElementById('cv-cnt').textContent = `${cv.length}件 / 株価${S.price_latest||'-'}`;
   document.getElementById('b-cv').innerHTML = cv.map(r=>`<tr>
-    <td class="l muted">${lk(r.code,r.code)}</td><td class="l">${lk(r.code,r.name||'-')}</td>
+    <td class="txt-left code">${lk(r.code,r.code)}</td>
+    <td class="txt-left"><a href="detail.html?code=${r.code}" style="color:inherit">${r.name||'-'}</a></td>
     <td><b style="font-size:14px;color:#4caf50">${r.score}</b></td>
     <td class="fall">-${r.cover.toFixed(2)}pt</td>
     <td><b>${r.cur_ratio.toFixed(1)}%</b></td>
     <td class="rise"><b>+${r.price_gain.toFixed(1)}%</b></td>
     <td class="hide-sp muted">${r.up_days}日</td>
-    <td class="hide-sp muted">${r.inst}</td>
-  </tr>`).join('') || '<tr><td colspan="8" class="empty">該当なし</td></tr>';
+    <td class="hide-sp muted">${r.inst}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">該当なし</td></tr>';
 
-  const chg = (rows,c) => rows.map(r=>`<tr>
-    <td class="l muted">${lk(r.code,r.code)}</td><td class="l">${lk(r.code,r.name||'-')}</td>
+  const chg=(rows,c)=>rows.map(r=>`<tr>
+    <td class="txt-left code">${lk(r.code,r.code)}</td>
+    <td class="txt-left"><a href="detail.html?code=${r.code}" style="color:inherit">${r.name||'-'}</a></td>
     <td><b>${r.cur_ratio.toFixed(2)}%</b></td><td class="hide-sp muted">${r.past_ratio.toFixed(2)}%</td>
-    <td class="${c}">${(r.delta_ratio>=0?'+':'')+r.delta_ratio.toFixed(2)}pt</td>
-  </tr>`).join('') || '<tr><td colspan="5" class="empty">なし</td></tr>';
+    <td class="${c}">${(r.delta_ratio>=0?'+':'')+r.delta_ratio.toFixed(2)}pt</td></tr>`).join('')||'<tr><td colspan="5" class="empty">なし</td></tr>';
+  document.getElementById('b-inc').innerHTML = chg(S.increase||[],'rise');
+  document.getElementById('b-dec').innerHTML = chg(S.decrease||[],'fall');
 
-  document.getElementById('b-inc').innerHTML = chg(S.increase,'rise');
-  document.getElementById('b-dec').innerHTML = chg(S.decrease,'fall');
+  document.getElementById('nw-cnt').textContent = `${(S.new||[]).length}件`;
+  document.getElementById('b-new').innerHTML = (S.new||[]).map(r=>`<tr>
+    <td class="txt-left code">${lk(r.code,r.code)}</td>
+    <td class="txt-left"><a href="detail.html?code=${r.code}" style="color:inherit">${r.name||'-'}</a></td>
+    <td class="txt-left">${r.institution}</td><td><b class="rise">${r.ratio.toFixed(2)}%</b></td>
+    <td class="hide-sp muted">${r.date}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">なし</td></tr>';
 
-  document.getElementById('b-new').innerHTML = S.new.map(r=>`<tr>
-    <td class="l muted">${lk(r.code,r.code)}</td><td class="l">${lk(r.code,r.name||'-')}</td>
-    <td class="l">${r.institution}</td><td><b class="rise">${r.ratio.toFixed(2)}%</b></td>
-    <td class="hide-sp muted">${r.date}</td>
-  </tr>`).join('') || '<tr><td colspan="5" class="empty">なし</td></tr>';
-
-  document.getElementById('b-top').innerHTML = D.short.top.map(r=>`<tr>
-    <td class="l muted">${lk(r.code,r.code)}</td><td class="l">${lk(r.code,r.name||'-')}</td>
+  document.getElementById('b-top').innerHTML = (D.short.top||[]).map(r=>`<tr>
+    <td class="txt-left code">${lk(r.code,r.code)}</td>
+    <td class="txt-left"><a href="detail.html?code=${r.code}" style="color:inherit">${r.name||'-'}</a></td>
     <td><b class="rise">${r.total_ratio.toFixed(2)}%</b></td>
-    <td class="hide-sp">${fmtN(r.total_shares)}</td><td>${r.inst}</td>
-  </tr>`).join('');
+    <td class="hide-sp">${(r.total_shares||0).toLocaleString()}</td>
+    <td>${r.inst}</td><td class="hide-sp muted">${r.date}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">なし</td></tr>';
 }
 
-function renderHits(){
+// ===== ウォッチ =====
+function renderWatch(){
   if(!D) return;
-  document.getElementById('b-hits').innerHTML = D.hits30.map(r=>`<tr>
-    <td class="l muted">${lk(r.code,r.code)}</td><td class="l">${lk(r.code,r.name||'-')}</td>
-    <td><span class="badge">${r.hit_count}回</span></td><td class="hide-sp muted">${r.last_date}</td>
-  </tr>`).join('') || '<tr><td colspan="4" class="empty">なし</td></tr>';
+  const pm={}; dPrices.forEach(p=>pm[p.code]=p);
+  const list=[...WATCHED].map(c=>pm[c]||{code:c,name:'',close:null,pct:null,ratio:null});
+  document.getElementById('w-cnt').textContent = `${list.length}件`;
+  document.getElementById('w-body').innerHTML = list.map(d=>`<tr>
+    <td class="txt-left code">${lk(d.code,d.code)}</td>
+    <td class="txt-left"><a href="detail.html?code=${d.code}" style="color:inherit">${d.name||'-'}</a></td>
+    <td>${fmtNum(d.close)}</td>
+    <td class="${pctClass(d.pct)}">${fmtPct(d.pct)}</td>
+    <td class="hide-sp">${d.ratio!=null?d.ratio.toFixed(1)+'x':'-'}</td>
+    <td><button class="btn btn-sm btn-ghost" onclick="toggleWatch('${d.code}')">解除</button></td></tr>`).join('')
+    || '<tr><td colspan="6" class="empty">ウォッチ銘柄がありません。各表のコード横の☆で追加できます。</td></tr>';
 }
 </script>
 </body>
