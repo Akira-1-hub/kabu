@@ -614,8 +614,21 @@ SQUEEZE_WEIGHTS = {
     'short_level': 5.0,   # 現在の残高水準(%)＝燃料（重視）
     'up_days': 2.0,       # 続伸日数
     'vol': 4.0,           # 出来高急増ボーナス
+    'surge': 6.0,         # 空売り急増（一気に積み増し）ボーナス
+    'new_short': 8.0,     # 新規空売り（新規参入機関の残高pt × これ）
 }
 MIN_SQUEEZE_RATIO = 2.0   # この残高割合(%)未満は踏み上げ対象外（玉が少なすぎ）
+SURGE_PT = 0.5            # 期間中の残高増加がこのpt以上なら「急増」とみなす
+NEW_SHORT_CAP = 2.5       # 新規空売り残高ptの加点上限（1社突出の暴れ防止）
+
+# 踏み上げ進行中（買戻し×上昇トレンド）の重み
+COVER_WEIGHTS = {
+    'cover_delta': 8.0,   # 買戻し量(pt)＝投げの大きさ
+    'price_gain': 2.0,    # 期間騰落率(%)
+    'up_days': 3.0,       # 続伸日数＝上昇トレンドの強さ
+    'short_level': 3.0,   # 残っている残高(%)＝さらに踏める燃料
+    'vol': 4.0,           # 出来高急増ボーナス
+}
 
 
 def _price_momentum(k):
@@ -657,6 +670,14 @@ def squeeze_ranking(period='weekly', limit=50, weights=None):
     if not inc:
         return {'rows': [], 'latest': rank['latest'], 'from': rank['from'], 'price_latest': None}
 
+    # 新規空売り（この期間に新規参入した機関）を銘柄ごとに集計
+    ne = short_new_entries(period, limit=10 ** 9)
+    new_by_code = {}
+    for e in ne['entries']:
+        nb = new_by_code.setdefault(e['code'], {'n': 0, 'ratio': 0.0})
+        nb['n'] += 1
+        nb['ratio'] += e['ratio']
+
     k = {'daily': 2, 'weekly': 5, 'thisweek': 5}.get(period, 5)
     mom = _price_momentum(k)
     price_latest = next((m['latest'] for m in mom.values() if m.get('latest')), None)
@@ -669,15 +690,61 @@ def squeeze_ranking(period='weekly', limit=50, weights=None):
         if not m or m['gain'] is None or m['gain'] <= 0:
             continue                       # 株価が上がっていなければ踏み上げではない
         vol_bonus = w['vol'] if (m['vr'] and m['vr'] >= 1.5) else 0
+        is_surge = s['delta_ratio'] >= SURGE_PT          # 空売り急増
+        surge_bonus = w['surge'] if is_surge else 0
+        nb = new_by_code.get(s['code'])
+        new_n = nb['n'] if nb else 0                     # 新規参入した機関数
+        new_bonus = w['new_short'] * min(nb['ratio'], NEW_SHORT_CAP) if nb else 0
         score = (s['delta_ratio'] * w['short_delta']
                  + m['gain'] * w['price_gain']
                  + s['cur_ratio'] * w['short_level']
                  + (m['up_days'] or 0) * w['up_days']
-                 + vol_bonus)
+                 + vol_bonus + surge_bonus + new_bonus)
         rows.append({
             'code': s['code'], 'name': s['name'],
             'score': round(score, 1),
             'short_delta': s['delta_ratio'], 'cur_ratio': s['cur_ratio'],
+            'price_gain': m['gain'], 'up_days': m['up_days'],
+            'vol_ratio': round(m['vr'], 1) if m['vr'] else None,
+            'is_surge': is_surge, 'new_n': new_n,
+            'close': m['c0'], 'inst': s['inst'],
+        })
+    rows.sort(key=lambda x: x['score'], reverse=True)
+    return {'rows': rows[:limit], 'latest': rank['latest'],
+            'from': rank['from'], 'price_latest': price_latest}
+
+
+def cover_rally_ranking(period='daily', limit=50, weights=None):
+    """🚀踏み上げ進行中：買戻し（残高減少）かつ 株価が上昇トレンド の銘柄。
+    売り方が投げて（買戻し）株価が上がっている＝踏み上げが実際に起きている候補。
+    返り値: {'rows':[...], 'latest':短最新, 'from':基準, 'price_latest':株価最新}
+    """
+    w = {**COVER_WEIGHTS, **(weights or {})}
+    rank = short_change_ranking(period, limit=10 ** 9, min_abs=0.01)
+    dec = rank['decrease']                # 買戻し（delta_ratio<0）
+    if not dec:
+        return {'rows': [], 'latest': rank['latest'], 'from': rank['from'], 'price_latest': None}
+
+    k = {'daily': 2, 'weekly': 5, 'thisweek': 5}.get(period, 5)
+    mom = _price_momentum(k)
+    price_latest = next((m['latest'] for m in mom.values() if m.get('latest')), None)
+
+    rows = []
+    for s in dec:
+        m = mom.get(s['code'])
+        if not m or m['gain'] is None or m['gain'] <= 0:
+            continue                       # 上昇していなければ踏み上げ進行ではない
+        cover = -s['delta_ratio']          # 買戻し量(pt, 正の値)
+        vol_bonus = w['vol'] if (m['vr'] and m['vr'] >= 1.5) else 0
+        score = (cover * w['cover_delta']
+                 + m['gain'] * w['price_gain']
+                 + (m['up_days'] or 0) * w['up_days']
+                 + s['cur_ratio'] * w['short_level']   # 残る残高＝さらに踏める燃料
+                 + vol_bonus)
+        rows.append({
+            'code': s['code'], 'name': s['name'],
+            'score': round(score, 1),
+            'cover': round(cover, 3), 'cur_ratio': s['cur_ratio'],
             'price_gain': m['gain'], 'up_days': m['up_days'],
             'vol_ratio': round(m['vr'], 1) if m['vr'] else None,
             'close': m['c0'], 'inst': s['inst'],
