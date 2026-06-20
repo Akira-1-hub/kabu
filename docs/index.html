@@ -194,7 +194,7 @@
     <div class="card" style="margin-bottom:14px;border-color:#5a3a2a">
       <h2 style="background:linear-gradient(90deg,rgba(255,107,107,.15),var(--bg3))">🔥 踏み上げ警戒（空売り増加 × 株価上昇）<span class="muted" id="sq-cnt"></span></h2>
       <div class="table-wrap" style="max-height:560px;overflow-y:auto"><table>
-        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>踏み上げ度</th><th>空売り増</th><th>残高%</th><th class="hide-sp">新規</th><th>期間騰落</th><th title="直近3ヶ月の空売り単価に対する現在株価。＋＝直近ショートが含み損">直近含み</th><th class="hide-sp">続伸</th><th class="hide-sp">機関</th></tr></thead>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>踏み上げ度</th><th>空売り増</th><th>残高%</th><th class="hide-sp">新規</th><th title="買い戻しに必要な日数＝空売り残高株数÷直近25日平均出来高">買戻日数</th><th>期間騰落</th><th title="直近3ヶ月の空売り単価に対する現在株価。＋＝直近ショートが含み損">直近含み</th><th class="hide-sp">続伸</th><th class="hide-sp">機関</th></tr></thead>
         <tbody id="b-sq"></tbody></table></div>
     </div>
     <div class="card" style="margin-bottom:14px;border-color:#2a5a3a">
@@ -213,7 +213,7 @@
     </div>
     <div class="card" style="margin-top:14px"><h2>🆕 新規空売り（この期間に新たに建てられたポジション）<span class="muted" id="nw-cnt"></span></h2>
       <div class="table-wrap" style="max-height:480px;overflow-y:auto"><table>
-        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th class="txt-left">新規参入した機関</th><th>残高%</th><th class="hide-sp">建玉日</th></tr></thead>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th class="txt-left">新規参入した機関</th><th>機関%</th><th title="その銘柄の全機関合算の空売り残高割合">全体%</th><th class="hide-sp">建玉日</th></tr></thead>
         <tbody id="b-new"></tbody></table></div>
     </div>
     <div class="card" style="margin-top:14px"><h2>🏔 空売り残高割合トップ（積み上がっている銘柄）</h2>
@@ -504,10 +504,11 @@ function renderShort(){
     <td class="rise">+${r.short_delta.toFixed(2)}pt${r.is_surge?' 🔥':''}</td>
     <td><b>${r.cur_ratio.toFixed(1)}%</b></td>
     <td class="hide-sp">${r.new_n?`<span class="rise">🆕${r.new_n}</span>`:'<span class="muted">-</span>'}</td>
+    <td>${r.dtc!=null?`<b class="${r.dtc>=5?'rise':''}">${r.dtc.toFixed(1)}日</b>`:'<span class="muted">-</span>'}</td>
     <td class="rise"><b>+${r.price_gain.toFixed(1)}%</b></td>
     <td>${r.underwater!=null?`<b class="${r.underwater>0?'rise':'muted'}">${(r.underwater>=0?'+':'')+Math.round(r.underwater)}%</b>`:'<span class="muted">-</span>'}</td>
     <td class="hide-sp muted">${r.up_days}日</td>
-    <td class="hide-sp muted">${r.inst}</td></tr>`).join('') || '<tr><td colspan="10" class="empty">該当なし</td></tr>';
+    <td class="hide-sp muted">${r.inst}</td></tr>`).join('') || '<tr><td colspan="11" class="empty">該当なし</td></tr>';
 
   const cv=S.cover||[];
   document.getElementById('cv-cnt').textContent = `${cv.length}件 / 株価${S.price_latest||'-'}`;
@@ -534,7 +535,8 @@ function renderShort(){
     <td class="txt-left code">${lk(r.code,r.code)}</td>
     <td class="txt-left"><a href="detail.html?code=${r.code}" style="color:inherit">${r.name||'-'}</a></td>
     <td class="txt-left">${r.institution}</td><td><b class="rise">${r.ratio.toFixed(2)}%</b></td>
-    <td class="hide-sp muted">${r.date}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">なし</td></tr>';
+    <td>${r.total_ratio!=null?`<b>${r.total_ratio.toFixed(2)}%</b>`:'<span class="muted">-</span>'}</td>
+    <td class="hide-sp muted">${r.date}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">なし</td></tr>';
 
   document.getElementById('b-top').innerHTML = (D.short.top||[]).map(r=>`<tr>
     <td class="txt-left code">${lk(r.code,r.code)}</td>

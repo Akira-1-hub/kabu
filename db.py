@@ -544,6 +544,7 @@ def short_new_entries(period='daily', limit=50):
     now = short_active_positions_asof(latest)
     past = short_active_positions_asof(from_date)
     new_keys = set(now) - set(past)
+    totals = short_totals_asof(latest)   # 銘柄ごとの全機関合算 残高割合
 
     conn = get_conn()
     names = {r['code']: r['name'] for r in conn.execute('SELECT code,name FROM stocks').fetchall()}
@@ -552,10 +553,12 @@ def short_new_entries(period='daily', limit=50):
     entries = []
     for k in new_keys:
         d = now[k]
+        t = totals.get(d['code'])
         entries.append({
             'code': d['code'], 'name': names.get(d['code'], ''),
             'institution': d['institution'],
             'ratio': round(d['ratio'], 3),
+            'total_ratio': round(t['total_ratio'], 3) if t and t.get('total_ratio') is not None else None,
             'shares': int(d['shares']) if d['shares'] else 0,
             'date': d['date'],
         })
@@ -617,12 +620,14 @@ SQUEEZE_WEIGHTS = {
     'surge': 6.0,         # 空売り急増（一気に積み増し）ボーナス
     'new_short': 8.0,     # 新規空売り（新規参入機関の残高pt × これ）
     'underwater': 1.0,    # 直近(3M)空売りの含み損率(%) × これ（直近ショートが踏まれている度）
+    'dtc': 3.0,           # 買い戻し日数(Days to Cover) × これ（流動性に対する空売りの厚み）
 }
 MIN_SQUEEZE_RATIO = 2.0   # この残高割合(%)未満は踏み上げ対象外（玉が少なすぎ）
 SURGE_PT = 0.5            # 期間中の残高増加がこのpt以上なら「急増」とみなす
 NEW_SHORT_CAP = 2.5       # 新規空売り残高ptの加点上限（1社突出の暴れ防止）
 RECENT_DAYS = 91          # 「直近の空売り単価」の対象期間（約3ヶ月）
 UNDERWATER_CAP = 40       # 含み損率(%)の加点上限
+DTC_CAP = 15              # 買い戻し日数の加点上限（薄商い超小型の暴れ防止）
 
 # 踏み上げ進行中（買戻し×上昇トレンド）の重み
 COVER_WEIGHTS = {
@@ -663,9 +668,10 @@ def _price_momentum(k):
     return out
 
 
-def _recent_underwater(codes, from_date):
-    """codes について「直近(from_date以降)の空売り単価 vs 現在株価」の含み損率(%)を返す。
-    返り値 {code: pct}  正＝直近ショートが含み損（＝踏み上げの燃料）。
+def _squeeze_metrics(codes, from_date):
+    """候補銘柄ごとに踏み上げ補助指標を返す。
+    {code: {'underwater': 直近(from_date以降)空売りの含み損率%, 'avg_vol': 直近25日平均出来高}}
+      underwater 正＝直近ショートが含み損（踏み上げ燃料）／ avg_vol は買い戻し日数の分母
     """
     codes = list(codes)
     if not codes:
@@ -674,7 +680,7 @@ def _recent_underwater(codes, from_date):
     ph = ','.join('?' * len(codes))
     prices = {}
     for r in conn.execute(
-            f'SELECT code,date,high,low,close FROM daily_prices WHERE code IN ({ph})', codes):
+            f'SELECT code,date,high,low,close,volume FROM daily_prices WHERE code IN ({ph})', codes):
         prices.setdefault(r['code'], []).append(r)
     shorts = {}
     for r in conn.execute(
@@ -684,11 +690,15 @@ def _recent_underwater(codes, from_date):
     conn.close()
     out = {}
     for c in codes:
-        cb = compute_cost_basis(prices.get(c, []), shorts.get(c, []), from_date=from_date)
+        prows = prices.get(c, [])
+        cb = compute_cost_basis(prows, shorts.get(c, []), from_date=from_date)
+        uw = None
         ag = cb['agg']
         if ag and ag.get('sell_mid') and cb['close']:
-            sm, close = ag['sell_mid'], cb['close']
-            out[c] = round((close - sm) / sm * 100, 2)   # 正＝直近ショートが含み損
+            uw = round((cb['close'] - ag['sell_mid']) / ag['sell_mid'] * 100, 2)
+        vols = [p['volume'] for p in sorted(prows, key=lambda x: x['date'], reverse=True)[:25] if p['volume']]
+        avg_vol = (sum(vols) / len(vols)) if vols else None
+        out[c] = {'underwater': uw, 'avg_vol': avg_vol}
     return out
 
 
@@ -738,21 +748,30 @@ def squeeze_ranking(period='weekly', limit=50, weights=None):
             'short_delta': s['delta_ratio'], 'cur_ratio': s['cur_ratio'],
             'price_gain': m['gain'], 'up_days': m['up_days'],
             'vol_ratio': round(m['vr'], 1) if m['vr'] else None,
-            'is_surge': is_surge, 'new_n': new_n, 'underwater': None,
+            'is_surge': is_surge, 'new_n': new_n,
+            'underwater': None, 'dtc': None, 'cur_shares': s['cur_shares'],
             'close': m['c0'], 'inst': s['inst'],
         })
 
-    # 直近(約3ヶ月)の空売り単価 vs 現在株価 → 直近ショートが含み損なら加点
+    # 直近3ヶ月の含み損 ＋ 買い戻し日数(Days to Cover) で加点
     if rows and rank['latest']:
         from datetime import datetime as _dt2, timedelta as _td2
         recent_from = (_dt2.strptime(rank['latest'], '%Y-%m-%d') - _td2(days=RECENT_DAYS)).strftime('%Y-%m-%d')
         cand = sorted(rows, key=lambda x: x['score'], reverse=True)[:120]
-        uw = _recent_underwater([r['code'] for r in cand], recent_from)
+        met = _squeeze_metrics([r['code'] for r in cand], recent_from)
         for r in rows:
-            u = uw.get(r['code'])
+            mm = met.get(r['code'])
+            if not mm:
+                continue
+            u = mm['underwater']
             r['underwater'] = u
             if u and u > 0:
                 r['score'] = round(r['score'] + min(u, UNDERWATER_CAP) * w['underwater'], 1)
+            av = mm['avg_vol']
+            if av and r['cur_shares']:
+                dtc = r['cur_shares'] / av                       # 買い戻しに必要な日数
+                r['dtc'] = round(dtc, 1)
+                r['score'] = round(r['score'] + min(dtc, DTC_CAP) * w['dtc'], 1)
 
     rows.sort(key=lambda x: x['score'], reverse=True)
     return {'rows': rows[:limit], 'latest': rank['latest'],
