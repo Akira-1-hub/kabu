@@ -616,10 +616,13 @@ SQUEEZE_WEIGHTS = {
     'vol': 4.0,           # 出来高急増ボーナス
     'surge': 6.0,         # 空売り急増（一気に積み増し）ボーナス
     'new_short': 8.0,     # 新規空売り（新規参入機関の残高pt × これ）
+    'underwater': 1.0,    # 直近(3M)空売りの含み損率(%) × これ（直近ショートが踏まれている度）
 }
 MIN_SQUEEZE_RATIO = 2.0   # この残高割合(%)未満は踏み上げ対象外（玉が少なすぎ）
 SURGE_PT = 0.5            # 期間中の残高増加がこのpt以上なら「急増」とみなす
 NEW_SHORT_CAP = 2.5       # 新規空売り残高ptの加点上限（1社突出の暴れ防止）
+RECENT_DAYS = 91          # 「直近の空売り単価」の対象期間（約3ヶ月）
+UNDERWATER_CAP = 40       # 含み損率(%)の加点上限
 
 # 踏み上げ進行中（買戻し×上昇トレンド）の重み
 COVER_WEIGHTS = {
@@ -657,6 +660,35 @@ def _price_momentum(k):
         gain = round((c0 - ck) / ck * 100, 2) if (c0 and ck and ck > 0) else None
         out[r['code']] = {'c0': c0, 'gain': gain, 'up_days': r['up_days'],
                           'vr': r['vr'], 'latest': r['latest']}
+    return out
+
+
+def _recent_underwater(codes, from_date):
+    """codes について「直近(from_date以降)の空売り単価 vs 現在株価」の含み損率(%)を返す。
+    返り値 {code: pct}  正＝直近ショートが含み損（＝踏み上げの燃料）。
+    """
+    codes = list(codes)
+    if not codes:
+        return {}
+    conn = get_conn()
+    ph = ','.join('?' * len(codes))
+    prices = {}
+    for r in conn.execute(
+            f'SELECT code,date,high,low,close FROM daily_prices WHERE code IN ({ph})', codes):
+        prices.setdefault(r['code'], []).append(r)
+    shorts = {}
+    for r in conn.execute(
+            f'SELECT code,date,institution,shares,ratio,change_shares FROM short_selling '
+            f'WHERE code IN ({ph}) ORDER BY institution,date', codes):
+        shorts.setdefault(r['code'], []).append(r)
+    conn.close()
+    out = {}
+    for c in codes:
+        cb = compute_cost_basis(prices.get(c, []), shorts.get(c, []), from_date=from_date)
+        ag = cb['agg']
+        if ag and ag.get('sell_mid') and cb['close']:
+            sm, close = ag['sell_mid'], cb['close']
+            out[c] = round((close - sm) / sm * 100, 2)   # 正＝直近ショートが含み損
     return out
 
 
@@ -706,9 +738,22 @@ def squeeze_ranking(period='weekly', limit=50, weights=None):
             'short_delta': s['delta_ratio'], 'cur_ratio': s['cur_ratio'],
             'price_gain': m['gain'], 'up_days': m['up_days'],
             'vol_ratio': round(m['vr'], 1) if m['vr'] else None,
-            'is_surge': is_surge, 'new_n': new_n,
+            'is_surge': is_surge, 'new_n': new_n, 'underwater': None,
             'close': m['c0'], 'inst': s['inst'],
         })
+
+    # 直近(約3ヶ月)の空売り単価 vs 現在株価 → 直近ショートが含み損なら加点
+    if rows and rank['latest']:
+        from datetime import datetime as _dt2, timedelta as _td2
+        recent_from = (_dt2.strptime(rank['latest'], '%Y-%m-%d') - _td2(days=RECENT_DAYS)).strftime('%Y-%m-%d')
+        cand = sorted(rows, key=lambda x: x['score'], reverse=True)[:120]
+        uw = _recent_underwater([r['code'] for r in cand], recent_from)
+        for r in rows:
+            u = uw.get(r['code'])
+            r['underwater'] = u
+            if u and u > 0:
+                r['score'] = round(r['score'] + min(u, UNDERWATER_CAP) * w['underwater'], 1)
+
     rows.sort(key=lambda x: x['score'], reverse=True)
     return {'rows': rows[:limit], 'latest': rank['latest'],
             'from': rank['from'], 'price_latest': price_latest}

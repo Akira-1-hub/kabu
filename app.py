@@ -6,7 +6,7 @@ import threading
 import json
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import db
 import fetch
@@ -105,6 +105,17 @@ def stock_detail(code):
         s.get('name'), s.get('sector'), (fund or {}).get('description'))
     size = themes_mod.size_tag((fund or {}).get('market_cap_oku'))
 
+    # 建単価は「直近3ヶ月」を既定に（踏み上げの攻防ライン）。3Mに売買が無ければエピソード
+    sm = db.short_max_date()
+    cost_default = '66'
+    cost_basis = None
+    if sm:
+        cb_from = (datetime.strptime(sm, '%Y-%m-%d') - timedelta(days=db.RECENT_DAYS)).strftime('%Y-%m-%d')
+        cost_basis = db.short_cost_basis(code, from_date=cb_from)
+    if not cost_basis or not cost_basis.get('rows'):
+        cost_basis = db.short_cost_basis(code)   # 3Mに売買なし→エピソード
+        cost_default = 'ep'
+
     return render_template('detail.html',
                            stock=s,
                            fund=fund,
@@ -115,7 +126,8 @@ def stock_detail(code):
                            hits=db.get_stock_hit_history(code),
                            shorts_latest=db.get_short_latest_by_institution(code),
                            short_daily=db.get_short_daily_total(code),
-                           cost_basis=db.short_cost_basis(code),
+                           cost_basis=cost_basis,
+                           cost_default=cost_default,
                            flow_tags=db.get_flow_tags(code),
                            flow_label=db.FLOW_LABEL,
                            memos=db.get_memos(code))

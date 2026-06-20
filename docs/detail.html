@@ -347,11 +347,17 @@ fetch(`data/${code}.json`).then(r=>{
     selectInst(-1);   // ライン=全機関平均にリセット
   };
 
-  // 初期表示（エピソード）。期間データが無ければ期間ボタンは隠す
+  // 初期表示：直近3ヶ月を既定に（踏み上げの攻防ライン）。3Mに売買が無ければエピソード
   if(D.cost && D.cost.rows && D.cost.rows.length){
     document.getElementById('cost-card').style.display='block';
-    if(!D.costp){ document.querySelectorAll('.cost-period-btn').forEach(b=>{ if(b.dataset.cp!=='episode') b.style.display='none'; }); }
-    renderCostCard();
+    if(!D.costp){
+      document.querySelectorAll('.cost-period-btn').forEach(b=>{ if(b.dataset.cp!=='episode') b.style.display='none'; });
+      setCostPeriod('episode', document.querySelector('.cost-period-btn[data-cp="episode"]'));
+    } else {
+      const has3m = D.costp['3m'] && D.costp['3m'].rows && D.costp['3m'].rows.length;
+      const key = has3m ? '3m' : 'episode';
+      setCostPeriod(key, document.querySelector(`.cost-period-btn[data-cp="${key}"]`));
+    }
   }
 
   // 大口タグ履歴（閲覧用）

@@ -171,8 +171,8 @@
     <!-- 期間セレクタ -->
     <div id="cost-period" class="scan-panel" style="margin-bottom:10px;gap:8px 12px">
       <span class="muted" style="font-size:12px">期間</span>
-      <button class="btn btn-sm btn-ghost pbtn on" data-d="ep" onclick="applyPeriod('ep')">エピソード(自動)</button>
-      <button class="btn btn-sm btn-ghost pbtn" data-d="66" onclick="applyPeriod('66')">3M</button>
+      <button class="btn btn-sm btn-ghost pbtn {{ 'on' if cost_default!='66' else '' }}" data-d="ep" onclick="applyPeriod('ep')">エピソード(自動)</button>
+      <button class="btn btn-sm btn-ghost pbtn {{ 'on' if cost_default=='66' else '' }}" data-d="66" onclick="applyPeriod('66')">3M</button>
       <button class="btn btn-sm btn-ghost pbtn" data-d="130" onclick="applyPeriod('130')">6M</button>
       <button class="btn btn-sm btn-ghost pbtn" data-d="260" onclick="applyPeriod('260')">1Y</button>
       <button class="btn btn-sm btn-ghost pbtn" data-d="all" onclick="applyPeriod('all')">全期間</button>
@@ -181,7 +181,7 @@
       <span class="muted">〜</span>
       <input type="date" id="cost-to" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 6px;font-size:12px">
       <button class="btn btn-sm btn-accent" onclick="applyPeriodCustom()">適用</button>
-      <span class="muted" id="cost-period-label" style="font-size:11px"></span>
+      <span class="muted" id="cost-period-label" style="font-size:11px">{{ '（直近3ヶ月）' if cost_default=='66' else '（現エピソード自動）' }}</span>
     </div>
     {% if agg %}
     <div id="cost-agg-box" style="padding:10px 12px;background:rgba(255,159,67,.08);border:1px solid #5a3a2a;border-radius:8px;margin-bottom:10px;font-size:13px">
