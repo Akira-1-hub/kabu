@@ -256,14 +256,14 @@ function makeStockChart(priceEl, shortEl, bars, shorts, marks, lines) {
       `出来高 ${fmtVol(d.volume || 0)}` +
       (sv != null ? ` ／ 空売り <b style="color:${UP}">${sv.toFixed(2)}%</b>` : '');
     tip.style.display = 'block';
-    // カーソル近くに配置（priceEl内に収まるようクランプ）
+    // カーソルの右上に「棚」表示（はみ出す側は反転）
     const pw = cP.clientWidth, ph = cP.clientHeight;
     const tw = tip.offsetWidth, th = tip.offsetHeight;
-    let lx = tipX + 14, ty = tipY + 12;
-    if (lx + tw > pw - 4) lx = tipX - tw - 14;   // 右が切れるなら左へ
+    let lx = tipX + 14, ty = tipY - th - 12;      // 既定＝右上
+    if (lx + tw > pw - 4) lx = tipX - tw - 14;     // 右が切れるなら左へ
     if (lx < 2) lx = 2;
-    if (ty + th > ph - 2) ty = ph - th - 2;       // 下が切れるなら上へ
-    if (ty < 2) ty = 2;
+    if (ty < 2) ty = tipY + 14;                    // 上が切れるなら下へ
+    if (ty + th > ph - 2) ty = ph - th - 2;        // 下も切れるなら底に寄せる
     tip.style.left = lx + 'px'; tip.style.top = ty + 'px';
   }
 
