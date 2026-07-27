@@ -1,15 +1,14 @@
 @echo off
-chcp 65001 >nul
 cd /d C:\Users\akino\kabu
 
-echo === å…¬é–‹ã‚µã‚¤ãƒˆç”Ÿæˆä¸­ï¼ˆsite/ï¼‰ ===
+echo === ŒöŠJƒTƒCƒg¶¬’†isite/j ===
 python export_static.py
-if errorlevel 1 ( echo ã‚¨ãƒ©ãƒ¼: exportå¤±æ•— & pause & exit /b 1 )
+if errorlevel 1 ( echo ƒGƒ‰[: export¸”s & pause & exit /b 1 )
 
 echo.
-echo === gh-pages ã¸å…¬é–‹ä¸­ï¼ˆforce pushï¼‰ ===
+echo === gh-pages ‚ÖŒöŠJ’†iforce pushj ===
 cd site
-if exist .git rmdir /s /q .git
+if exist .git rd /s /q .git
 git init -q -b gh-pages
 git config user.name "akino"
 git config user.email "akino@users.noreply.github.com"
@@ -17,10 +16,10 @@ git add -A
 git commit -q -m "publish %date% %time:~0,5%"
 git push -f https://github.com/Akira-1-hub/kabu.git gh-pages
 set ERR=%errorlevel%
-rmdir /s /q .git
+rd /s /q .git
 cd ..
-if not "%ERR%"=="0" ( echo pushå¤±æ•— & pause & exit /b 1 )
+if not "%ERR%"=="0" ( echo push¸”s & pause & exit /b 1 )
 
 echo.
-echo å®Œäº†ï¼ https://akira-1-hub.github.io/kabu/ ã«1ã€œ2åˆ†ã§åæ˜ ã•ã‚Œã¾ã™
+echo Š®—¹I https://akira-1-hub.github.io/kabu/ ‚É1`2•ª‚Å”½‰f‚³‚ê‚Ü‚·
 pause
