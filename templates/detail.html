@@ -245,28 +245,12 @@
   </div>
 </div>
 
-<!-- 株価履歴テーブル -->
+<!-- 空売り残高報告の履歴（karauri.net風） -->
 <div class="card" style="margin-top:14px">
-  <h2>📅 株価履歴</h2>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th class="txt-left">日付</th><th>始値</th><th>高値</th><th>安値</th><th>終値</th><th>前日比%</th><th class="hide-sp">出来高</th></tr></thead>
-      <tbody>
-        {% for h in history %}
-        <tr>
-          <td class="txt-left muted">{{ h.date }}</td>
-          <td>{{ '{:,.0f}'.format(h.open) if h.open else '-' }}</td>
-          <td>{{ '{:,.0f}'.format(h.high) if h.high else '-' }}</td>
-          <td>{{ '{:,.0f}'.format(h.low) if h.low else '-' }}</td>
-          <td>{{ '{:,.0f}'.format(h.close) if h.close else '-' }}</td>
-          <td class="{{ 'rise' if (h.change_pct or 0)>0 else 'fall' if (h.change_pct or 0)<0 else '' }}">
-            {{ '{:+.2f}%'.format(h.change_pct) if h.change_pct is not none else '-' }}</td>
-          <td class="hide-sp">{{ '{:,.0f}'.format(h.volume) if h.volume else '-' }}</td>
-        </tr>
-        {% else %}<tr><td colspan="7" class="empty">履歴がありません</td></tr>{% endfor %}
-      </tbody>
-    </table>
-  </div>
+  <h2>📋 空売り残高報告の履歴（機関別・全期間）
+    {% if short_report %}<span class="muted">全{{ short_report|length }}件・列クリックでソート</span>{% endif %}
+  </h2>
+  <div id="short-report" class="table-wrap" style="height:520px;overflow-y:auto"></div>
 </div>
 
 {% endblock %}
@@ -428,5 +412,8 @@ function refreshMarks(tags){
   buildChart(marks);
 }
 renderTags({{ flow_tags|tojson }});
+
+// ===== 空売り残高報告の履歴（karauri.net風・chart.jsの共通実装） =====
+makeShortReportTable(document.getElementById('short-report'), {{ short_report|tojson }});
 </script>
 {% endblock %}

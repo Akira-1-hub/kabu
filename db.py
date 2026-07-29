@@ -418,6 +418,60 @@ def get_short_history(code):
     return [dict(r) for r in rows]
 
 
+def build_short_report_rows(rows, limit=None):
+    """空売り残高報告の履歴（karauri.net風）を組み立てる純関数。
+    rows: 生行の iterable（date, institution, ratio, shares を持つこと）
+
+    増減率・増減量はDB保存値を使わず、機関ごとの時系列差分から再計算する
+    （保存値は取込順の影響で karauri.net と食い違うため）。
+    備考: 新規 / 再IN（前回YYYY-MM-DD） / 報告義務消失(0.5%未満)。
+    新規・再INの行は karauri.net に合わせ増減率0%・増減量なし扱い。
+
+    返り値: 日付降順の list（compactキー: d=日付 i=機関 r=割合 cr=増減率 s=株数 cs=増減量 n=備考）
+    """
+    seq = sorted(({'date': r['date'], 'institution': r['institution'],
+                   'ratio': r['ratio'], 'shares': r['shares']} for r in rows),
+                 key=lambda x: (x['date'], x['institution']))
+    prev = {}   # institution -> 直前の行
+    out = []
+    for r in seq:
+        inst = r['institution']
+        ratio = r['ratio']
+        shares = r['shares']
+        p = prev.get(inst)
+        note = ''
+        cr = None
+        cs = None
+        if p is None:
+            note = '新規'
+        elif (p['ratio'] or 0) < SHORT_THRESHOLD and (ratio or 0) >= SHORT_THRESHOLD:
+            note = f"再IN（前回{p['date']}）"
+        else:
+            if ratio is not None and p['ratio'] is not None:
+                cr = round(ratio - p['ratio'], 4)
+            if shares is not None and p['shares'] is not None:
+                cs = shares - p['shares']
+        if ratio is not None and ratio < SHORT_THRESHOLD:
+            note = '報告義務消失'
+        out.append({'d': r['date'], 'i': inst, 'r': ratio,
+                    'cr': cr, 's': shares, 'cs': cs, 'n': note})
+        prev[inst] = r
+    out.reverse()   # 新しい順
+    if limit:
+        out = out[:limit]
+    return out
+
+
+def short_report_history(code, limit=None):
+    """銘柄の空売り残高報告履歴（karauri.net風・日付降順）"""
+    conn = get_conn()
+    rows = conn.execute(
+        'SELECT date, institution, ratio, shares FROM short_selling WHERE code=?',
+        (code,)).fetchall()
+    conn.close()
+    return build_short_report_rows(rows, limit)
+
+
 def get_short_daily_total(code):
     """銘柄の空売り残高推移（チャート用・繰り越し方式）
     各機関の最新報告を持ち越し、各日時点で0.5%以上の機関を合算。
@@ -450,20 +504,18 @@ def get_short_daily_total(code):
 
 
 def get_short_latest_by_institution(code):
-    """銘柄の現在の機関別空売り残高（各機関の最新報告を繰り越し、0.5%以上）"""
-    conn = get_conn()
-    rows = conn.execute("""
-        WITH latest_per_inst AS (
-            SELECT institution, MAX(date) d FROM short_selling
-            WHERE code=? GROUP BY institution
-        )
-        SELECT s.* FROM short_selling s
-        JOIN latest_per_inst l ON s.institution=l.institution AND s.date=l.d
-        WHERE s.code=? AND s.ratio >= ?
-        ORDER BY s.ratio DESC
-    """, (code, code, SHORT_THRESHOLD)).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    """銘柄の現在の機関別空売り残高（各機関の最新報告を繰り越し、0.5%以上）
+    増減はDB保存値でなく時系列差分（build_short_report_rows）から取る。
+    """
+    latest = {}   # institution -> 最新行（reportは日付降順なので最初に見た行）
+    for r in short_report_history(code):
+        if r['i'] not in latest:
+            latest[r['i']] = r
+    out = [{'code': code, 'date': r['d'], 'institution': r['i'], 'ratio': r['r'],
+            'change_ratio': r['cr'], 'shares': r['s'], 'change_shares': r['cs']}
+           for r in latest.values() if (r['r'] or 0) >= SHORT_THRESHOLD]
+    out.sort(key=lambda x: x['ratio'], reverse=True)
+    return out
 
 
 def short_max_date():

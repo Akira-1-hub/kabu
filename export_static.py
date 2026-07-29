@@ -111,13 +111,12 @@ def build():
                'c': r['close'], 'pct': r['change_pct'], 'v': r['volume'],
                'vr': r['volume_ratio']} for r in prices_by_code.get(code, [])[-PRICE_DAYS:]]
 
-        # 空売り推移（繰り越し方式）＋ 機関別最新
+        # 空売り推移（繰り越し方式）
         series = []
         state = {}
         for r in shorts_by_code.get(code, []):
-            state[r['institution']] = (r['ratio'] or 0, r['shares'] or 0, r['date'],
-                                       r['change_shares'])
-            active = [(ra, sh) for (ra, sh, _, _) in state.values() if ra >= db.SHORT_THRESHOLD]
+            state[r['institution']] = (r['ratio'] or 0, r['shares'] or 0)
+            active = [(ra, sh) for (ra, sh) in state.values() if ra >= db.SHORT_THRESHOLD]
             series.append({'d': r['date'],
                            'r': round(sum(a for a, _ in active), 3),
                            'i': len(active)})
@@ -127,9 +126,16 @@ def build():
             dedup[pt['d']] = pt
         series = list(dedup.values())[-SHORT_POINTS:]
 
-        inst = [{'institution': k, 'ratio': v[0], 'shares': v[1], 'date': v[2],
-                 'chg': v[3]}
-                for k, v in state.items() if v[0] >= db.SHORT_THRESHOLD]
+        # 空売り残高報告の履歴（karauri.net風・増減は時系列差分から再計算）
+        report = db.build_short_report_rows(shorts_by_code.get(code, []))
+        # 機関別最新（reportは日付降順＝機関ごとの最初の行が最新）
+        latest_inst = {}
+        for r in report:
+            if r['i'] not in latest_inst:
+                latest_inst[r['i']] = r
+        inst = [{'institution': r['i'], 'ratio': r['r'], 'shares': r['s'],
+                 'date': r['d'], 'chg': r['cs']}
+                for r in latest_inst.values() if (r['r'] or 0) >= db.SHORT_THRESHOLD]
         inst.sort(key=lambda x: x['ratio'], reverse=True)
 
         # 推定建単価（在庫データから純関数で計算）。エピソード=デフォルト＋期間別
@@ -159,7 +165,7 @@ def build():
                 s.get('name'), s.get('sector'), (fund or {}).get('description')),
             'size': themes_mod.size_tag((fund or {}).get('market_cap_oku')),
             'prices': ph,
-            'short': {'series': series, 'inst': inst},
+            'short': {'series': series, 'inst': inst, 'report': report[:300]},
             'hits': [{'d': h['date'], 'c': h['condition'], 't': h['detail']}
                      for h in hits_by_code.get(code, [])],
             'tags': tags_by_code.get(code, []),

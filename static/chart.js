@@ -367,3 +367,86 @@ function makeStockChart(priceEl, shortEl, bars, shorts, marks, lines) {
   draw();
   return { setDays, setLines, refreshColors };
 }
+
+// ============================================================
+// 空売り残高報告テーブル（karauri.net風・ツール/公開版で共通）
+// rows: [{d:計算日, i:空売り者, r:残高割合%, cr:増減率, s:残高数量, cs:増減量, n:備考}]
+// container(div)内に table を生成。列ヘッダクリックでソート。
+// ============================================================
+function makeShortReportTable(container, rows) {
+  if (!container) return;
+  rows = rows || [];
+  if (!rows.length) {
+    container.innerHTML = '<div class="empty">空売り残高の報告はありません（残高0.5%未満）</div>';
+    return;
+  }
+  const COLS = [
+    { k: 'd',  label: '計算日',   left: true },
+    { k: 'i',  label: '空売り者', left: true },
+    { k: 'r',  label: '残高割合' },
+    { k: 'cr', label: '増減率' },
+    { k: 's',  label: '残高数量' },
+    { k: 'cs', label: '増減量' },
+    { k: 'n',  label: '備考',     left: true },
+  ];
+  let sortK = null, sortAsc = false;   // null = 既定（日付降順）
+  const base = rows.slice();
+
+  const pf = v => v > 0 ? 'rise' : (v < 0 ? 'fall' : 'muted');
+  const fmtPct = v => v == null ? '0%' : ((v > 0 ? '+' : '') + Number(v).toFixed(3) + '%');
+  const fmtChg = v => v == null ? '' : ((v > 0 ? '+' : '') + Math.round(v).toLocaleString());
+  const noteHtml = n => {
+    if (!n) return '';
+    if (n === '報告義務消失')
+      return '<span style="background:rgba(255,107,107,.16);color:#ff9f9f;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:700;white-space:nowrap">報告義務消失</span>';
+    if (n === '新規')
+      return '<span style="background:rgba(0,188,212,.14);color:#5fd6e8;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:700">新規</span>';
+    return '<span class="muted" style="white-space:nowrap">' + n + '</span>';
+  };
+
+  function sorted() {
+    if (!sortK) return base;
+    const arr = base.slice();
+    const nul = sortAsc ? Infinity : -Infinity;
+    arr.sort((a, b) => {
+      let x = a[sortK], y = b[sortK];
+      if (typeof x === 'string' || typeof y === 'string') {
+        x = x == null ? '' : String(x);
+        y = y == null ? '' : String(y);
+        return sortAsc ? x.localeCompare(y, 'ja') : y.localeCompare(x, 'ja');
+      }
+      x = x == null ? nul : x;
+      y = y == null ? nul : y;
+      return sortAsc ? x - y : y - x;
+    });
+    return arr;
+  }
+
+  function render() {
+    const arrow = c => c.k !== sortK
+      ? ' <span style="opacity:.35">⇕</span>'
+      : (sortAsc ? ' <span style="color:var(--accent2)">▲</span>' : ' <span style="color:var(--accent2)">▼</span>');
+    const thead = '<tr>' + COLS.map((c, ci) =>
+      '<th data-ci="' + ci + '" style="cursor:pointer;user-select:none' + (c.left ? ';text-align:left' : '') + '">' +
+      c.label + arrow(c) + '</th>').join('') + '</tr>';
+    const body = sorted().map(r => '<tr>' +
+      '<td style="text-align:left" class="muted">' + r.d + '</td>' +
+      '<td style="text-align:left;white-space:nowrap">' + r.i + '</td>' +
+      '<td><b>' + (r.r == null ? '-' : Number(r.r).toFixed(3) + '%') + '</b></td>' +
+      '<td class="' + (r.cr == null ? 'muted' : pf(r.cr)) + '">' + fmtPct(r.cr) + '</td>' +
+      '<td>' + (r.s == null ? '-' : Math.round(r.s).toLocaleString() + '株') + '</td>' +
+      '<td class="' + (r.cs == null ? '' : pf(r.cs)) + '">' + fmtChg(r.cs) + '</td>' +
+      '<td style="text-align:left">' + noteHtml(r.n) + '</td>' +
+      '</tr>').join('');
+    container.innerHTML = '<table><thead>' + thead + '</thead><tbody>' + body + '</tbody></table>';
+    container.querySelectorAll('th').forEach(th => {
+      th.onclick = () => {
+        const c = COLS[+th.dataset.ci];
+        if (sortK === c.k) { sortAsc = !sortAsc; }
+        else { sortK = c.k; sortAsc = (c.k === 'i' || c.k === 'n'); }
+        render();
+      };
+    });
+  }
+  render();
+}
