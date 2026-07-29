@@ -6,6 +6,8 @@ import threading
 import json
 import csv
 import io
+import os
+import sys
 from datetime import datetime, timedelta
 
 import db
@@ -125,6 +127,7 @@ def stock_detail(code):
                            history=db.get_price_history(code, 120),
                            hits=db.get_stock_hit_history(code),
                            shorts_latest=db.get_short_latest_by_institution(code),
+                           short_report=db.short_report_history(code),
                            short_daily=db.get_short_daily_total(code),
                            cost_basis=cost_basis,
                            cost_default=cost_default,
@@ -209,6 +212,78 @@ def api_short_update_status():
         'days': info.get('days', 0),
         'gaps': gaps[-10:],
         'gap_count': len(gaps),
+    })
+
+
+# ============================================================
+# 公開サイト更新（site/生成 → gh-pages へ force push）
+# ============================================================
+publish_state = {'running': False, 'log': [], 'ok': None, 'finished': None}
+GH_REMOTE = 'https://github.com/Akira-1-hub/kabu.git'
+
+
+def _publish_run():
+    import subprocess
+    import shutil
+    base = os.path.dirname(os.path.abspath(__file__))
+    site = os.path.join(base, 'site')
+
+    def log(m):
+        publish_state['log'].append(str(m))
+
+    def run(args, cwd, label):
+        """失敗したら例外。出力の末尾だけログに残す"""
+        p = subprocess.run(args, cwd=cwd, capture_output=True, text=True,
+                           encoding='utf-8', errors='replace')
+        if p.returncode != 0:
+            tail = ((p.stderr or '') + (p.stdout or '')).strip().splitlines()
+            raise RuntimeError(f'{label} 失敗: ' + (tail[-1] if tail else f'code {p.returncode}'))
+        return p
+
+    publish_state.update({'running': True, 'log': [], 'ok': None, 'finished': None})
+    try:
+        log('公開サイトを生成中...(1分ほど)')
+        run([sys.executable, 'export_static.py'], base, 'サイト生成')
+        log('生成完了。GitHubへ送信中...')
+
+        gitdir = os.path.join(site, '.git')
+        if os.path.isdir(gitdir):
+            shutil.rmtree(gitdir, ignore_errors=True)
+        run(['git', 'init', '-q', '-b', 'gh-pages'], site, 'git init')
+        run(['git', 'config', 'user.name', 'akino'], site, 'git config')
+        run(['git', 'config', 'user.email', 'akino@users.noreply.github.com'], site, 'git config')
+        run(['git', 'add', '-A'], site, 'git add')
+        stamp = datetime.now().strftime('%Y-%m-%d %H:%M')
+        run(['git', 'commit', '-q', '-m', f'publish {stamp}'], site, 'git commit')
+        run(['git', 'push', '-f', GH_REMOTE, 'gh-pages'], site, 'git push')
+        shutil.rmtree(gitdir, ignore_errors=True)
+
+        publish_state['ok'] = True
+        log('完了！ 1〜2分でサイトに反映されます')
+    except Exception as e:
+        publish_state['ok'] = False
+        log(f'エラー: {e}')
+    finally:
+        publish_state['running'] = False
+        publish_state['finished'] = datetime.now().strftime('%m/%d %H:%M')
+
+
+@app.route('/api/publish', methods=['POST'])
+def api_publish():
+    if publish_state['running']:
+        return jsonify({'ok': False, 'msg': '公開更新中です'})
+    threading.Thread(target=_publish_run, daemon=True).start()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/publish/status')
+def api_publish_status():
+    return jsonify({
+        'running': publish_state['running'],
+        'log': publish_state['log'][-8:],
+        'ok': publish_state['ok'],
+        'finished': publish_state['finished'],
+        'url': 'https://akira-1-hub.github.io/kabu/',
     })
 
 

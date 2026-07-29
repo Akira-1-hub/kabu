@@ -61,6 +61,22 @@
   </div>
 </div>
 
+<!-- 公開サイト更新 -->
+<div class="card" style="margin-bottom:14px">
+  <h2>🌐 閲覧用サイト（GitHub Pages）
+    <button class="btn btn-sm btn-accent" id="btn-publish" onclick="publishSite()">⬆ 公開サイトを更新</button>
+  </h2>
+  <div class="body">
+    <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center">
+      <a href="https://akira-1-hub.github.io/kabu/" target="_blank">https://akira-1-hub.github.io/kabu/ ↗</a>
+      <span class="muted" id="pub-status" style="font-size:12px"></span>
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:6px">
+      ※今のDBから閲覧用サイトを作り直して公開します（1〜2分）。スキャンや空売り更新のあとに押してください。
+    </div>
+  </div>
+</div>
+
 <!-- スキャン結果（ライブ） -->
 <div class="card" style="margin-bottom:14px">
   <h2>スクリーニング結果（②の条件で絞り込み）<span><a href="/export/scan" class="btn btn-sm btn-ghost">CSV出力</a></span></h2>
@@ -283,8 +299,36 @@ async function updateShort(){
   setTimeout(loadShortStatus, 800);
 }
 
+// ===== 公開サイト更新 =====
+async function publishSite(){
+  const btn = document.getElementById('btn-publish');
+  const r = await (await fetch('/api/publish',{method:'POST'})).json();
+  if(!r.ok){ alert(r.msg); return; }
+  btn.disabled = true;
+  document.getElementById('pub-status').textContent = '開始しました...';
+  setTimeout(loadPublishStatus, 600);
+}
+async function loadPublishStatus(){
+  try{
+    const s = await (await fetch('/api/publish/status')).json();
+    const btn = document.getElementById('btn-publish');
+    const el = document.getElementById('pub-status');
+    const last = s.log.length ? s.log[s.log.length-1] : '';
+    if(s.running){
+      btn.disabled = true; btn.textContent = '⏳ 公開中...';
+      el.innerHTML = `<span class="muted">${last}</span>`;
+      setTimeout(loadPublishStatus, 2000);
+    } else {
+      btn.disabled = false; btn.textContent = '⬆ 公開サイトを更新';
+      if(s.ok === true)  el.innerHTML = `<span style="color:#2ecc71">✓ ${last}</span> <span class="muted">(${s.finished})</span>`;
+      else if(s.ok === false) el.innerHTML = `<b style="color:#ff9f43">${last}</b>`;
+    }
+  }catch(e){}
+}
+
 // 起動時に前回スキャン結果を復元
 poll();
 loadShortStatus();
+loadPublishStatus();
 </script>
 {% endblock %}
