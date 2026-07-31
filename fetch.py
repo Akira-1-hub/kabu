@@ -303,6 +303,48 @@ def ensure_fundamentals(codes, max_workers=12, force=False):
     return n
 
 
+def fetch_all_fundamentals(codes, max_workers=12, force=False,
+                           progress_cb=None, stop_flag: threading.Event | None = None):
+    """全銘柄の企業情報を並列取得（進捗通知・中断対応）
+    progress_cb(done, total, ok) を都度呼ぶ。既に当日取得済みはスキップ。
+    返り値: {'total':対象数, 'done':処理数, 'ok':取得成功数}
+    """
+    from datetime import datetime as _dt
+    today = _dt.now().strftime('%Y-%m-%d')
+    todo = []
+    for c in codes:
+        f = db.get_fundamentals(c)
+        if force or f is None or f.get('updated') != today:
+            todo.append(c)
+    total = len(todo)
+    if not total:
+        if progress_cb:
+            progress_cb(0, 0, 0)
+        return {'total': 0, 'done': 0, 'ok': 0}
+
+    def work(c):
+        if stop_flag is not None and stop_flag.is_set():
+            return 0
+        try:
+            d = fetch_fundamentals(c)
+            if d:
+                db.save_fundamentals(d)
+                return 1
+        except Exception:
+            pass
+        return 0
+
+    done = ok = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futs = [ex.submit(work, c) for c in todo]
+        for r in as_completed(futs):
+            done += 1
+            ok += r.result()
+            if progress_cb and (done % 10 == 0 or done == total):
+                progress_cb(done, total, ok)
+    return {'total': total, 'done': done, 'ok': ok}
+
+
 # ============================================================
 # スキャン（全銘柄取得→保存→条件判定）
 # ============================================================

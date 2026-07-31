@@ -1247,6 +1247,25 @@ def get_fundamentals(code):
     return dict(r) if r else None
 
 
+def count_fundamentals():
+    """企業情報を取得済みの銘柄数（時価総額が入っているもの）"""
+    conn = get_conn()
+    n = conn.execute(
+        'SELECT COUNT(*) c FROM fundamentals WHERE market_cap_oku IS NOT NULL').fetchone()['c']
+    conn.close()
+    return n
+
+
+def count_tradable():
+    """普通株式の銘柄数（ETF/REIT除外）"""
+    conn = get_conn()
+    n = conn.execute(
+        f"SELECT COUNT(*) c FROM stocks WHERE market IN ({','.join('?'*len(STOCK_MARKETS))})",
+        STOCK_MARKETS).fetchone()['c']
+    conn.close()
+    return n
+
+
 def save_fundamentals(d: dict):
     """既存の事業内容は、新値が空なら保持する"""
     old = get_fundamentals(d['code'])

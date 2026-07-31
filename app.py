@@ -216,6 +216,68 @@ def api_short_update_status():
 
 
 # ============================================================
+# 企業情報の一括取得（全銘柄）
+# ============================================================
+fund_state = {'running': False, 'done': 0, 'total': 0, 'ok': 0,
+              'status': '', 'finished': None}
+fund_stop = threading.Event()
+
+
+def _fund_run(force):
+    fund_stop.clear()
+    fund_state.update({'running': True, 'done': 0, 'total': 0, 'ok': 0,
+                       'status': '対象を集計中...', 'finished': None})
+    try:
+        codes = [s['code'] for s in db.list_tradable_codes()]
+
+        def cb(done, total, ok):
+            fund_state.update({'done': done, 'total': total, 'ok': ok,
+                               'status': f'取得中 {done}/{total}（成功{ok}）'})
+
+        r = fetch.fetch_all_fundamentals(codes, max_workers=12, force=force,
+                                         progress_cb=cb, stop_flag=fund_stop)
+        if fund_stop.is_set():
+            fund_state['status'] = f'中断しました（{r["ok"]}件取得）'
+        elif r['total'] == 0:
+            fund_state['status'] = '全銘柄すでに取得済みです（本日分）'
+        else:
+            fund_state['status'] = f'完了 {r["ok"]}/{r["total"]}件を取得しました'
+    except Exception as e:
+        fund_state['status'] = f'エラー: {e}'
+    finally:
+        fund_state['running'] = False
+        fund_state['finished'] = datetime.now().strftime('%m/%d %H:%M')
+
+
+@app.route('/api/fundamentals/all', methods=['POST'])
+def api_fundamentals_all():
+    if fund_state['running']:
+        return jsonify({'ok': False, 'msg': '取得中です'})
+    force = bool((request.json or {}).get('force'))
+    threading.Thread(target=_fund_run, args=(force,), daemon=True).start()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/fundamentals/stop', methods=['POST'])
+def api_fundamentals_stop():
+    fund_stop.set()
+    fund_state['status'] = '中断中...'
+    return jsonify({'ok': True})
+
+
+@app.route('/api/fundamentals/status')
+def api_fundamentals_status():
+    have = db.count_fundamentals()
+    return jsonify({
+        'running': fund_state['running'],
+        'done': fund_state['done'], 'total': fund_state['total'],
+        'ok': fund_state['ok'], 'status': fund_state['status'],
+        'finished': fund_state['finished'],
+        'have': have, 'stocks': db.count_tradable(),
+    })
+
+
+# ============================================================
 # 公開サイト更新（site/生成 → gh-pages へ force push）
 # ============================================================
 publish_state = {'running': False, 'log': [], 'ok': None, 'finished': None}
