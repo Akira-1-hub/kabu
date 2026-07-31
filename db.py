@@ -1247,6 +1247,14 @@ def get_fundamentals(code):
     return dict(r) if r else None
 
 
+def get_all_fundamentals():
+    """全銘柄の企業情報を {code: dict} で一括取得（1件ずつ接続を開くより速い）"""
+    conn = get_conn()
+    rows = conn.execute('SELECT * FROM fundamentals').fetchall()
+    conn.close()
+    return {r['code']: dict(r) for r in rows}
+
+
 def count_fundamentals():
     """企業情報を取得済みの銘柄数（時価総額が入っているもの）"""
     conn = get_conn()

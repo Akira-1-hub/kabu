@@ -15,6 +15,25 @@ HEADERS = {
     'Accept-Language': 'ja,en-US;q=0.9',
 }
 
+class _Skip(Exception):
+    """取得を省略するための内部シグナル"""
+
+
+# スレッドごとにSessionを使い回す（TLSハンドシェイクの再発生を防ぎ約2倍速い）
+_tls = threading.local()
+
+
+def _session():
+    s = getattr(_tls, 'sess', None)
+    if s is None:
+        s = requests.Session()
+        s.headers.update(HEADERS)
+        ad = requests.adapters.HTTPAdapter(pool_connections=4, pool_maxsize=8)
+        s.mount('https://', ad)
+        s.mount('http://', ad)
+        _tls.sess = s
+    return s
+
 
 # ============================================================
 # kabutan 株価取得
@@ -147,14 +166,15 @@ def parse_date(raw: str) -> str:
 # ============================================================
 # ファンダメンタルズ（クリック時取得・キャッシュ用）
 # ============================================================
-def fetch_fundamentals(code: str) -> dict | None:
-    """時価総額/PER/PBR/EPS/利回り=kabutan、事業内容(特色・連結事業)=Yahoo!ファイナンス"""
+def fetch_fundamentals(code: str, skip_desc=False, skip_margin=False) -> dict | None:
+    """時価総額/PER/PBR/EPS/利回り=kabutan、事業内容(特色・連結事業)=Yahoo!ファイナンス
+    skip_desc/skip_margin: 既に取得済みで変わりにくい項目のリクエストを省く（一括取得の高速化用）
+    """
     import re
     from bs4 import BeautifulSoup
     from datetime import datetime as _dt
 
-    sess = requests.Session()
-    sess.headers.update(HEADERS)
+    sess = _session()
     out = {'code': code, 'updated': _dt.now().strftime('%Y-%m-%d'),
            'market_cap_oku': None, 'per': None, 'pbr': None, 'eps': None,
            'dividend_yield': None, 'unit_shares': None, 'description': None,
@@ -234,6 +254,8 @@ def fetch_fundamentals(code: str) -> dict | None:
 
     # ---- kabutan finance：営業利益率（営業益÷売上高、予想優先） ----
     try:
+        if skip_margin:
+            raise _Skip
         rf = sess.get(f'https://kabutan.jp/stock/finance?code={code}', timeout=10)
         rf.encoding = 'utf-8'
         for t in pd.read_html(StringIO(rf.text)):
@@ -254,6 +276,8 @@ def fetch_fundamentals(code: str) -> dict | None:
 
     # ---- Yahoo!ファイナンス profile：特色・連結事業 ----
     try:
+        if skip_desc:
+            raise _Skip
         r2 = sess.get(f'https://finance.yahoo.co.jp/quote/{code}.T/profile', timeout=10)
         r2.encoding = 'utf-8'
         soup2 = BeautifulSoup(r2.text, 'lxml')
@@ -311,22 +335,28 @@ def fetch_all_fundamentals(codes, max_workers=12, force=False,
     """
     from datetime import datetime as _dt
     today = _dt.now().strftime('%Y-%m-%d')
+    # 既存レコードを1クエリでまとめて読む（1件ずつ接続を開くと遅い）
+    existing = db.get_all_fundamentals()
     todo = []
     for c in codes:
-        f = db.get_fundamentals(c)
+        f = existing.get(c)
         if force or f is None or f.get('updated') != today:
-            todo.append(c)
+            # 特色・営業利益率は日々変わらないので、取得済みならリクエストを省く
+            todo.append((c,
+                         bool(f and f.get('description')) and not force,
+                         bool(f and f.get('op_margin') is not None) and not force))
     total = len(todo)
     if not total:
         if progress_cb:
             progress_cb(0, 0, 0)
         return {'total': 0, 'done': 0, 'ok': 0}
 
-    def work(c):
+    def work(item):
+        c, skip_desc, skip_margin = item
         if stop_flag is not None and stop_flag.is_set():
             return 0
         try:
-            d = fetch_fundamentals(c)
+            d = fetch_fundamentals(c, skip_desc=skip_desc, skip_margin=skip_margin)
             if d:
                 db.save_fundamentals(d)
                 return 1
@@ -336,7 +366,7 @@ def fetch_all_fundamentals(codes, max_workers=12, force=False,
 
     done = ok = 0
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        futs = [ex.submit(work, c) for c in todo]
+        futs = [ex.submit(work, it) for it in todo]
         for r in as_completed(futs):
             done += 1
             ok += r.result()
