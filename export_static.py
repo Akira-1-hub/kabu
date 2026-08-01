@@ -80,6 +80,7 @@ def build():
             'pct': p['change_pct'], 'vol': p['volume'], 'ratio': p['volume_ratio'],
             'cap': f.get('market_cap_oku') if f else None,
             'sr': round(t['total_ratio'], 2) if t and t.get('total_ratio') else None,
+            'sec': stocks.get(code, {}).get('sector') or 'その他',
         })
 
     short_sum = {'latest': db.short_max_date(), 'top': db.short_top_ratio(50),
@@ -190,7 +191,7 @@ def build():
         if os.path.exists(src):
             shutil.copy2(src, os.path.join(SITE, fn))
     # スタイル（ツールと共通）＆チャートエンジン
-    for fn in ('style.css', 'chart.js'):
+    for fn in ('style.css', 'chart.js', 'heatmap.js'):
         src = os.path.join(BASE, 'static', fn)
         if os.path.exists(src):
             shutil.copy2(src, os.path.join(SITE, fn))

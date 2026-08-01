@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>投資DB - 閲覧用</title>
 <link rel="stylesheet" href="style.css">
+<script src="heatmap.js"></script>
 <style>
   /* 静的ビューア固有 */
   .panel{display:none}
@@ -22,6 +23,7 @@
   <a class="tab" data-tab="stocks" href="#stocks">銘柄一覧</a>
   <a class="tab" data-tab="gainers" href="#gainers">上昇率</a>
   <a class="tab" data-tab="rankings" href="#rankings">ランキング</a>
+  <a class="tab" data-tab="heatmap" href="#heatmap">ヒートマップ</a>
   <a class="tab" data-tab="short" href="#short">空売り</a>
   <a class="tab" data-tab="watch" href="#watch">ウォッチ</a>
   <span class="spacer"></span>
@@ -176,6 +178,14 @@
     </div>
   </div>
 
+  <!-- ===== ヒートマップ ===== -->
+  <div class="panel" id="p-heatmap">
+    <div class="page-title">🗺 市場ヒートマップ
+      <span class="muted" style="font-size:13px;font-weight:400">業種別・面積＝時価総額</span>
+    </div>
+    <div id="heatmap"></div>
+  </div>
+
   <!-- ===== 空売り ===== -->
   <div class="panel" id="p-short">
     <div class="page-title">📉 空売り残高ランキング
@@ -309,7 +319,7 @@ function injectStars(){
 new MutationObserver(()=>injectStars()).observe(document.body,{childList:true,subtree:true});
 
 // ===== タブ =====
-const TABS=['dashboard','stocks','gainers','rankings','short','watch'];
+const TABS=['dashboard','stocks','gainers','rankings','heatmap','short','watch'];
 function currentTab(){ const h=location.hash.replace('#',''); return TABS.includes(h)?h:'dashboard'; }
 function showTab(t){
   TABS.forEach(x=>{
@@ -317,7 +327,18 @@ function showTab(t){
     document.querySelector('.tab[data-tab="'+x+'"]').classList.toggle('active', x===t);
   });
   if(t==='watch') renderWatch();
+  if(t==='heatmap') buildHeatmap();   // 非表示中は幅0なので、表示時に組み立てる
   window.scrollTo(0,0);
+}
+
+let HM=null;
+function buildHeatmap(){
+  if(!D) return;
+  const rows = dPrices.map(p=>({code:p.code, name:p.name, sector:p.sec||'その他',
+                                cap:p.cap, pct:p.pct, sr:p.sr, close:p.close, vr:p.ratio}));
+  if(!HM) HM = makeHeatmap(document.getElementById('heatmap'), rows,
+                           {link:c=>'detail.html?code='+c});
+  else HM.refresh();
 }
 window.addEventListener('hashchange', ()=>showTab(currentTab()));
 
@@ -333,7 +354,7 @@ fetch('data.json').then(r=>r.json()).then(j=>{
   document.getElementById('updated').textContent = '更新 '+(j.updated||'-');
   dPrices = (j.prices||[]).map(p=>({code:p.code,name:p.name,date:p.date,close:p.close,
                                     change:p.change,pct:p.pct,vol:p.vol,ratio:p.ratio,
-                                    cap:p.cap,sr:p.sr}));
+                                    cap:p.cap,sr:p.sr,sec:p.sec}));
   dPrices.forEach(p=>{ META[p.code]={cap:p.cap, sr:p.sr}; });
   renderDash(); renderStocks(); renderGainers(); renderRankings(); renderShort();
   showTab(currentTab());

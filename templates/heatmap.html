@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}ヒートマップ - 投資DB{% endblock %}
+{% block head %}<script src="{{ url_for('static', filename='heatmap.js') }}"></script>{% endblock %}
+{% block content %}
+
+<div class="page-title">🗺 市場ヒートマップ
+  <span class="muted" style="font-size:13px;font-weight:400">業種別・面積＝時価総額</span>
+</div>
+
+<div id="heatmap"></div>
+
+{% endblock %}
+{% block script %}
+<script>
+makeHeatmap(document.getElementById('heatmap'), {{ rows|tojson }},
+            { link: c => '/stock/' + c });
+</script>
+{% endblock %}

@@ -1294,6 +1294,35 @@ def get_fundamentals(code):
     return dict(r) if r else None
 
 
+def heatmap_rows():
+    """ヒートマップ用: 各銘柄の最新株価＋業種＋時価総額＋空売り比率"""
+    conn = get_conn()
+    ph = ','.join('?' * len(STOCK_MARKETS))
+    rows = conn.execute(f"""
+        WITH latest AS (SELECT code, MAX(date) d FROM daily_prices GROUP BY code)
+        SELECT p.code, s.name, s.sector, p.close, p.change_pct AS pct,
+               p.volume, p.volume_ratio AS vr, f.market_cap_oku AS cap
+        FROM daily_prices p
+        JOIN latest l ON p.code = l.code AND p.date = l.d
+        JOIN stocks s ON s.code = p.code
+        LEFT JOIN fundamentals f ON f.code = p.code
+        WHERE s.market IN ({ph})
+    """, STOCK_MARKETS).fetchall()
+    conn.close()
+    latest = short_max_date()
+    totals = short_totals_asof(latest) if latest else {}
+    out = []
+    for r in rows:
+        t = totals.get(r['code'])
+        out.append({
+            'code': r['code'], 'name': r['name'] or '', 'sector': r['sector'] or 'その他',
+            'close': r['close'], 'pct': r['pct'], 'vr': r['vr'],
+            'cap': r['cap'],
+            'sr': round(t['total_ratio'], 2) if t and t.get('total_ratio') else None,
+        })
+    return out
+
+
 def get_all_fundamentals():
     """全銘柄の企業情報を {code: dict} で一括取得（1件ずつ接続を開くより速い）"""
     conn = get_conn()

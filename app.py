@@ -417,6 +417,11 @@ def short_page():
                            info=db.short_data_range())
 
 
+@app.route('/heatmap')
+def heatmap_page():
+    return render_template('heatmap.html', rows=db.heatmap_rows())
+
+
 @app.route('/rankings')
 def rankings():
     prices = db.get_latest_prices()
