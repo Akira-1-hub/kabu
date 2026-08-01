@@ -84,7 +84,8 @@ def build():
 
     short_sum = {'latest': db.short_max_date(), 'top': db.short_top_ratio(50),
                  'meta': db.short_data_range(), 'gaps': db.short_gaps()}
-    for period in ('daily', 'weekly', 'thisweek'):
+    # 公開版は静的なので任意の日付指定はできない。よく使う期間を事前計算しておく
+    for period in ('daily', 'weekly', 'thisweek', '14d', '30d', '90d'):
         rank = db.short_change_ranking(period, limit=50)
         new = db.short_new_entries(period, limit=50)
         sq = db.squeeze_ranking(period, limit=50)
