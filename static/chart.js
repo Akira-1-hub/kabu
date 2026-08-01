@@ -394,7 +394,7 @@ function _srStyle() {
 .sr-left{flex:1 1 auto;min-width:0}
 .sr-l1{display:flex;gap:6px;align-items:baseline;font-size:13px}
 .sr-day{color:var(--muted);font-size:11px;flex:0 0 auto}
-.sr-inst{color:var(--accent2);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sr-inst{color:var(--text);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sr-l2{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;margin-top:2px}
 .sr-right{flex:0 0 40%;max-width:190px;text-align:right}
 .sr-bar{height:14px;background:var(--bg3);border-radius:3px;overflow:hidden}
