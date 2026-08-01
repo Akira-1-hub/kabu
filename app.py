@@ -388,9 +388,9 @@ def api_gainers_margins():
 
 @app.route('/short')
 def short_page():
-    period = request.args.get('period', 'daily')
+    period = request.args.get('period', 'weekly')   # 既定は週間（1週間前比）
     if period not in ('daily', 'weekly', 'thisweek'):
-        period = 'daily'
+        period = 'weekly'
     rank = db.short_change_ranking(period, limit=50)
     new_short = db.short_new_entries(period, limit=50)
     squeeze = db.squeeze_ranking(period, limit=50)
