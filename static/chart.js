@@ -373,8 +373,41 @@ function makeStockChart(priceEl, shortEl, bars, shorts, marks, lines) {
 // rows: [{d:計算日, i:空売り者, r:残高割合%, cr:増減率, s:残高数量, cs:増減量, n:備考}]
 // container(div)内に table を生成。列ヘッダクリックでソート。
 // ============================================================
+// 空売り残高報告テーブルのスタイル（ツール/公開版で共通・1回だけ注入）
+function _srStyle() {
+  if (document.getElementById('sr-style')) return;
+  const el = document.createElement('style');
+  el.id = 'sr-style';
+  el.textContent = `
+.sr-tools{display:flex;gap:6px;align-items:center;padding:6px 8px;position:sticky;top:0;z-index:3;
+  background:var(--bg2);border-bottom:1px solid var(--border)}
+.sr-tools .sr-mode{background:var(--bg3);color:var(--muted);border:1px solid var(--border);
+  border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer}
+.sr-tools .sr-mode.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.sr-tools .sr-sort{margin-left:auto;background:var(--bg);color:var(--text);
+  border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px}
+.sr-ym{position:sticky;top:33px;z-index:2;background:var(--bg3);color:var(--muted);
+  font-size:11px;font-weight:700;padding:3px 10px;border-bottom:1px solid var(--border)}
+.sr-card{display:flex;gap:10px;align-items:center;padding:7px 10px;
+  border-bottom:1px solid var(--border)}
+.sr-card:hover{background:var(--bg3)}
+.sr-left{flex:1 1 auto;min-width:0}
+.sr-l1{display:flex;gap:6px;align-items:baseline;font-size:13px}
+.sr-day{color:var(--muted);font-size:11px;flex:0 0 auto}
+.sr-inst{color:var(--accent2);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sr-l2{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;margin-top:2px}
+.sr-right{flex:0 0 40%;max-width:190px;text-align:right}
+.sr-bar{height:14px;background:var(--bg3);border-radius:3px;overflow:hidden}
+.sr-bar span{display:block;height:100%}
+.sr-sh{font-size:11px;color:var(--text);margin-top:2px;white-space:nowrap}
+@media(max-width:520px){.sr-right{flex-basis:34%}.sr-inst{font-size:12px}}
+`;
+  document.head.appendChild(el);
+}
+
 function makeShortReportTable(container, rows) {
   if (!container) return;
+  _srStyle();
   rows = rows || [];
   if (!rows.length) {
     container.innerHTML = '<div class="empty">空売り残高の報告はありません（残高0.5%未満）</div>';
@@ -422,7 +455,16 @@ function makeShortReportTable(container, rows) {
     return arr;
   }
 
-  function render() {
+  // 表示モード: 'table'=表 / 'card'=karauri.net風（スマホで横スクロール不要）
+  const MKEY = 'kabu_sr_mode';
+  let mode = localStorage.getItem(MKEY);
+  if (mode !== 'table' && mode !== 'card') {
+    mode = (window.innerWidth || 1200) < 760 ? 'card' : 'table';  // 狭い画面は既定でカード
+  }
+  const maxR = Math.max(...base.map(r => Number(r.r) || 0), 0.001);
+
+  // ---- 表モード ----
+  function tableHtml() {
     const arrow = c => c.k !== sortK
       ? ' <span style="opacity:.35">⇕</span>'
       : (sortAsc ? ' <span style="color:var(--accent2)">▲</span>' : ' <span style="color:var(--accent2)">▼</span>');
@@ -438,7 +480,76 @@ function makeShortReportTable(container, rows) {
       '<td class="' + (r.cs == null ? '' : pf(r.cs)) + '">' + fmtChg(r.cs) + '</td>' +
       '<td style="text-align:left">' + noteHtml(r.n) + '</td>' +
       '</tr>').join('');
-    container.innerHTML = '<table><thead>' + thead + '</thead><tbody>' + body + '</tbody></table>';
+    return '<table><thead>' + thead + '</thead><tbody>' + body + '</tbody></table>';
+  }
+
+  // ---- カードモード（karauri.net風・横スクロールなし） ----
+  function cardHtml() {
+    const UP = 'var(--rise)', DOWN = 'var(--fall)';
+    let prevYm = '';
+    return '<div class="sr-cards">' + sorted().map(r => {
+      const up = (r.cs || 0) > 0, down = (r.cs || 0) < 0;
+      const barCol = up ? UP : (down ? DOWN : '#8888aa');
+      const w = Math.max(2, Math.min(100, (Number(r.r) || 0) / maxR * 100));
+      const chgPctHtml = r.cr == null ? ''
+        : '<span class="' + pf(r.cr) + '" style="font-weight:700">' + fmtPct(r.cr) + '</span>';
+      const chgShHtml = r.cs == null || r.cs === 0 ? ''
+        : '<span class="' + pf(r.cs) + '">' + fmtChg(r.cs) + '</span>';
+      // 年月が変わったら見出しを挟む（karauri.net の日付ヘッダ相当）
+      const ym = (r.d || '').slice(0, 7);
+      let head = '';
+      if (ym && ym !== prevYm) {
+        prevYm = ym;
+        head = '<div class="sr-ym">' + ym.replace('-', '年') + '月</div>';
+      }
+      const day = (r.d || '').slice(8) || '';
+      return head +
+        '<div class="sr-card">' +
+          '<div class="sr-left">' +
+            '<div class="sr-l1"><span class="sr-day">' + day + '日</span>' +
+              '<span class="sr-inst">' + r.i + '</span></div>' +
+            '<div class="sr-l2"><b>' + (r.r == null ? '-' : Number(r.r).toFixed(3) + '%') + '</b>' +
+              chgPctHtml + chgShHtml + noteHtml(r.n) + '</div>' +
+          '</div>' +
+          '<div class="sr-right">' +
+            '<div class="sr-bar"><span style="width:' + w + '%;background:' + barCol + '"></span></div>' +
+            '<div class="sr-sh">' + (r.s == null ? '-' : Math.round(r.s).toLocaleString() + '株') + '</div>' +
+          '</div>' +
+        '</div>';
+    }).join('') + '</div>';
+  }
+
+  function toolbarHtml() {
+    const b = (m, label) => '<button class="sr-mode' + (mode === m ? ' on' : '') +
+      '" data-m="' + m + '">' + label + '</button>';
+    let sortSel = '';
+    if (mode === 'card') {
+      sortSel = '<select class="sr-sort">' + COLS.map(c =>
+        '<option value="' + c.k + '"' + (c.k === (sortK || 'd') ? ' selected' : '') + '>' +
+        c.label + '順</option>').join('') + '</select>';
+    }
+    return '<div class="sr-tools">' + b('table', '表') + b('card', 'カード') +
+           sortSel + '</div>';
+  }
+
+  function render() {
+    container.innerHTML = toolbarHtml() +
+      '<div class="sr-body">' + (mode === 'card' ? cardHtml() : tableHtml()) + '</div>';
+    container.querySelectorAll('.sr-mode').forEach(btn => {
+      btn.onclick = () => {
+        mode = btn.dataset.m;
+        localStorage.setItem(MKEY, mode);
+        render();
+        container.scrollTop = 0;
+      };
+    });
+    const sel = container.querySelector('.sr-sort');
+    if (sel) sel.onchange = () => {
+      const k = sel.value;
+      sortK = (k === 'd') ? null : k;
+      sortAsc = false;
+      render();
+    };
     container.querySelectorAll('th').forEach(th => {
       th.onclick = () => {
         const c = COLS[+th.dataset.ci];
