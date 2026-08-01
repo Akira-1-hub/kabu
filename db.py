@@ -572,6 +572,22 @@ def _short_from_date(period, latest, custom_from=None):
     return (L - timedelta(days=1)).strftime('%Y-%m-%d')  # daily
 
 
+def _short_range(period, custom_from=None, custom_to=None):
+    """比較する2時点 (from_date, to_date) を返す。
+    custom_to を指定すると「最新」ではなくその日を終点にできる（区間指定）。
+    """
+    latest = short_max_date()
+    if not latest:
+        return None, None
+    to_date = custom_to or latest
+    if to_date > latest:
+        to_date = latest
+    from_date = _short_from_date(period, to_date, custom_from)
+    if from_date > to_date:
+        from_date, to_date = to_date, from_date
+    return from_date, to_date
+
+
 def short_active_positions_asof(asof):
     """asof時点でアクティブ(0.5%以上)な (code,institution) → 最新ポジション"""
     conn = get_conn()
@@ -591,14 +607,13 @@ def short_active_positions_asof(asof):
     return {(r['code'], r['institution']): dict(r) for r in rows}
 
 
-def short_new_entries(period='daily', limit=50, custom_from=None):
+def short_new_entries(period='daily', limit=50, custom_from=None, custom_to=None):
     """新規空売り：この期間に新たにアクティブ化した(code,institution)
     返り値: {'entries':[...], 'latest':date, 'from':date}
     """
-    latest = short_max_date()
+    from_date, latest = _short_range(period, custom_from, custom_to)
     if not latest:
         return {'entries': [], 'latest': None, 'from': None}
-    from_date = _short_from_date(period, latest, custom_from)
 
     now = short_active_positions_asof(latest)
     past = short_active_positions_asof(from_date)
@@ -625,18 +640,17 @@ def short_new_entries(period='daily', limit=50, custom_from=None):
     return {'entries': entries[:limit], 'latest': latest, 'from': from_date}
 
 
-def short_change_ranking(period='daily', limit=50, min_abs=0.01, custom_from=None):
+def short_change_ranking(period='daily', limit=50, min_abs=0.01,
+                         custom_from=None, custom_to=None):
     """
     空売り残高の増減ランキング
     period: 'daily'(前日比) / 'weekly'(1週間前比) / 'thisweek'(今週頭比)
-            / 'custom'(custom_fromを基準) / '30d'のような日数指定
+            / 'custom'(custom_from〜custom_toの区間) / '30d'のような日数指定
     返り値: {'increase':[...], 'decrease':[...], 'latest':date, 'from':date}
     """
-    latest = short_max_date()
+    from_date, latest = _short_range(period, custom_from, custom_to)
     if not latest:
         return {'increase': [], 'decrease': [], 'latest': None, 'from': None}
-
-    from_date = _short_from_date(period, latest, custom_from)
     cur = short_totals_asof(latest)
     past = short_totals_asof(from_date)
 
@@ -714,16 +728,18 @@ def _momentum_days(period, from_date, latest):
     return max(2, min(int(n) + 1, 500))
 
 
-def _price_momentum(k):
-    """各銘柄の直近k営業日の株価モメンタム
-    返り値 code -> {c0(最新終値), gain(%), up_days, vr(出来高倍率), latest}
+def _price_momentum(k, end_date=None):
+    """各銘柄の（end_date以前の）直近k営業日の株価モメンタム
+    返り値 code -> {c0(終点終値), gain(%), up_days, vr(出来高倍率), latest}
     """
     conn = get_conn()
-    rows = conn.execute("""
+    where = 'WHERE date <= ?' if end_date else ''
+    params = ([end_date] if end_date else []) + [k, k]
+    rows = conn.execute(f"""
         WITH ranked AS (
             SELECT code, date, close, change_pct, volume_ratio,
                    ROW_NUMBER() OVER (PARTITION BY code ORDER BY date DESC) rn
-            FROM daily_prices
+            FROM daily_prices {where}
         )
         SELECT code,
             MAX(CASE WHEN rn=1 THEN close END)        AS c0,
@@ -732,7 +748,7 @@ def _price_momentum(k):
             MAX(CASE WHEN rn=? THEN close END)        AS ck,
             SUM(CASE WHEN change_pct>0 THEN 1 ELSE 0 END) AS up_days
         FROM ranked WHERE rn <= ? GROUP BY code
-    """, (k, k)).fetchall()
+    """, params).fetchall()
     conn.close()
     out = {}
     for r in rows:
@@ -743,7 +759,7 @@ def _price_momentum(k):
     return out
 
 
-def _squeeze_metrics(codes, from_date):
+def _squeeze_metrics(codes, from_date, end_date=None):
     """候補銘柄ごとに踏み上げ補助指標を返す。
     {code: {'underwater': 直近(from_date以降)空売りの含み損率%, 'avg_vol': 直近25日平均出来高}}
       underwater 正＝直近ショートが含み損（踏み上げ燃料）／ avg_vol は買い戻し日数の分母
@@ -766,6 +782,8 @@ def _squeeze_metrics(codes, from_date):
     out = {}
     for c in codes:
         prows = prices.get(c, [])
+        if end_date:   # 過去区間を見るときは、その時点までの株価で評価する
+            prows = [p for p in prows if p['date'] <= end_date]
         cb = compute_cost_basis(prows, shorts.get(c, []), from_date=from_date)
         uw = None
         ag = cb['agg']
@@ -777,18 +795,21 @@ def _squeeze_metrics(codes, from_date):
     return out
 
 
-def squeeze_ranking(period='weekly', limit=50, weights=None, custom_from=None):
+def squeeze_ranking(period='weekly', limit=50, weights=None,
+                    custom_from=None, custom_to=None):
     """🔥踏み上げ警戒：空売り増加 かつ 株価上昇 の銘柄を合成スコアで降順
     返り値: {'rows':[...], 'latest':短最新, 'from':基準, 'price_latest':株価最新}
     """
     w = {**SQUEEZE_WEIGHTS, **(weights or {})}
-    rank = short_change_ranking(period, limit=10 ** 9, min_abs=0.01, custom_from=custom_from)
+    rank = short_change_ranking(period, limit=10 ** 9, min_abs=0.01,
+                                custom_from=custom_from, custom_to=custom_to)
     inc = rank['increase']                # 空売り増加（delta_ratio>0）
     if not inc:
         return {'rows': [], 'latest': rank['latest'], 'from': rank['from'], 'price_latest': None}
 
     # 新規空売り（この期間に新規参入した機関）を銘柄ごとに集計
-    ne = short_new_entries(period, limit=10 ** 9, custom_from=custom_from)
+    ne = short_new_entries(period, limit=10 ** 9,
+                           custom_from=custom_from, custom_to=custom_to)
     new_by_code = {}
     for e in ne['entries']:
         nb = new_by_code.setdefault(e['code'], {'n': 0, 'ratio': 0.0})
@@ -796,7 +817,7 @@ def squeeze_ranking(period='weekly', limit=50, weights=None, custom_from=None):
         nb['ratio'] += e['ratio']
 
     k = _momentum_days(period, rank['from'], rank['latest'])
-    mom = _price_momentum(k)
+    mom = _price_momentum(k, end_date=(custom_to or None) and rank['latest'])
     price_latest = next((m['latest'] for m in mom.values() if m.get('latest')), None)
 
     rows = []
@@ -833,7 +854,8 @@ def squeeze_ranking(period='weekly', limit=50, weights=None, custom_from=None):
         from datetime import datetime as _dt2, timedelta as _td2
         recent_from = (_dt2.strptime(rank['latest'], '%Y-%m-%d') - _td2(days=RECENT_DAYS)).strftime('%Y-%m-%d')
         cand = sorted(rows, key=lambda x: x['score'], reverse=True)[:120]
-        met = _squeeze_metrics([r['code'] for r in cand], recent_from)
+        met = _squeeze_metrics([r['code'] for r in cand], recent_from,
+                               end_date=(custom_to or None) and rank['latest'])
         for r in rows:
             mm = met.get(r['code'])
             if not mm:
@@ -853,19 +875,21 @@ def squeeze_ranking(period='weekly', limit=50, weights=None, custom_from=None):
             'from': rank['from'], 'price_latest': price_latest}
 
 
-def cover_rally_ranking(period='daily', limit=50, weights=None, custom_from=None):
+def cover_rally_ranking(period='daily', limit=50, weights=None,
+                        custom_from=None, custom_to=None):
     """🚀踏み上げ進行中：買戻し（残高減少）かつ 株価が上昇トレンド の銘柄。
     売り方が投げて（買戻し）株価が上がっている＝踏み上げが実際に起きている候補。
     返り値: {'rows':[...], 'latest':短最新, 'from':基準, 'price_latest':株価最新}
     """
     w = {**COVER_WEIGHTS, **(weights or {})}
-    rank = short_change_ranking(period, limit=10 ** 9, min_abs=0.01, custom_from=custom_from)
+    rank = short_change_ranking(period, limit=10 ** 9, min_abs=0.01,
+                                custom_from=custom_from, custom_to=custom_to)
     dec = rank['decrease']                # 買戻し（delta_ratio<0）
     if not dec:
         return {'rows': [], 'latest': rank['latest'], 'from': rank['from'], 'price_latest': None}
 
     k = _momentum_days(period, rank['from'], rank['latest'])
-    mom = _price_momentum(k)
+    mom = _price_momentum(k, end_date=(custom_to or None) and rank['latest'])
     price_latest = next((m['latest'] for m in mom.values() if m.get('latest')), None)
 
     rows = []
