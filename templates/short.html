@@ -14,9 +14,25 @@
   <a class="btn btn-sm {{ 'btn-accent' if period=='daily' else 'btn-ghost' }}" href="/short?period=daily">デイリー（前日比）</a>
   <a class="btn btn-sm {{ 'btn-accent' if period=='weekly' else 'btn-ghost' }}" href="/short?period=weekly">週間（1週間前比）</a>
   <a class="btn btn-sm {{ 'btn-accent' if period=='thisweek' else 'btn-ghost' }}" href="/short?period=thisweek">今週（週初比）</a>
+  <span style="width:1px;height:22px;background:var(--border);margin:0 4px"></span>
+  <label class="muted" style="font-size:12px">基準日を指定</label>
+  <input type="date" id="cf" value="{{ custom_from or '' }}"
+         max="{{ rank.latest or '' }}"
+         style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 6px;font-size:12px">
+  <button class="btn btn-sm {{ 'btn-accent' if period=='custom' else 'btn-ghost' }}" onclick="applyCustom()">→ 最新と比較</button>
+  {% for d,l in [('14d','2週間'),('30d','1ヶ月'),('90d','3ヶ月')] %}
+  <a class="btn btn-sm {{ 'btn-accent' if period==d else 'btn-ghost' }}" href="/short?period={{ d }}" style="font-size:11px;padding:4px 8px">{{ l }}</a>
+  {% endfor %}
   <span class="spacer" style="flex:1"></span>
   <span class="muted" style="font-size:12px">累計{{ '{:,}'.format(info.n) }}件 / {{ info.codes }}銘柄</span>
 </div>
+<script>
+function applyCustom(){
+  const v = document.getElementById('cf').value;
+  if(!v){ alert('基準日を選んでください'); return; }
+  location.href = '/short?period=custom&from=' + v;
+}
+</script>
 
 <!-- 🔥 踏み上げ警戒 -->
 <div class="card" style="margin-bottom:14px;border-color:#5a3a2a">

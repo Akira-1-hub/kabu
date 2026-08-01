@@ -326,11 +326,16 @@ function makeStockChart(priceEl, shortEl, bars, shorts, marks, lines) {
 
     // タッチ（パン＋ピンチ）
     let tStart = null;
+    // 2本指の距離（縦・斜めのピンチでも正しく測れるよう2次元で）
+    const touchDist = t => Math.hypot(t[0].clientX - t[1].clientX,
+                                      t[0].clientY - t[1].clientY) || 1;
+
     cv.addEventListener('touchstart', e => {
       if (e.touches.length === 1) tStart = { mode: 'pan', x: e.touches[0].clientX, a, b };
       else if (e.touches.length === 2) {
-        const d = Math.abs(e.touches[0].clientX - e.touches[1].clientX);
-        tStart = { mode: 'pinch', d, a, b, cx: (e.touches[0].clientX + e.touches[1].clientX) / 2 };
+        // 開始時の距離と表示範囲を保持し、以降は「開始比」で絶対的に拡大縮小する
+        tStart = { mode: 'pinch', d0: touchDist(e.touches), a0: a, b0: b,
+                   cx: (e.touches[0].clientX + e.touches[1].clientX) / 2 };
       }
     }, { passive: false });
     cv.addEventListener('touchmove', e => {
@@ -341,10 +346,9 @@ function makeStockChart(priceEl, shortEl, bars, shorts, marks, lines) {
         let na = tStart.a - dBars; na = Math.max(0, Math.min(N - n, na));
         a = na; b = na + n - 1; draw();
       } else if (tStart.mode === 'pinch' && e.touches.length === 2) {
-        const d = Math.abs(e.touches[0].clientX - e.touches[1].clientX);
-        a = tStart.a; b = tStart.b;
-        zoomAt(tStart.cx, cv, d > tStart.d ? 1 / 1.04 : 1.04);
-        tStart.d = d; tStart.a = a; tStart.b = b;
+        // 指を広げる(d↑) → 開始比<1 → 表示本数が減る＝拡大（一般的な操作と同じ向き）
+        a = tStart.a0; b = tStart.b0;
+        zoomAt(tStart.cx, cv, tStart.d0 / touchDist(e.touches));
       }
     }, { passive: false });
     cv.addEventListener('touchend', () => { tStart = null; });

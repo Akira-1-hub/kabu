@@ -389,14 +389,20 @@ def api_gainers_margins():
 @app.route('/short')
 def short_page():
     period = request.args.get('period', 'weekly')   # 既定は週間（1週間前比）
-    if period not in ('daily', 'weekly', 'thisweek'):
+    custom_from = request.args.get('from') or None
+    if period == 'custom' and not custom_from:
         period = 'weekly'
-    rank = db.short_change_ranking(period, limit=50)
-    new_short = db.short_new_entries(period, limit=50)
-    squeeze = db.squeeze_ranking(period, limit=50)
-    cover = db.cover_rally_ranking(period, limit=50)
+    # 'daily'/'weekly'/'thisweek'/'custom' のほか '14d' のような日数指定を許可
+    if period not in ('daily', 'weekly', 'thisweek', 'custom') and not (
+            period.endswith('d') and period[:-1].isdigit() and 0 < int(period[:-1]) <= 730):
+        period = 'weekly'
+    rank = db.short_change_ranking(period, limit=50, custom_from=custom_from)
+    new_short = db.short_new_entries(period, limit=50, custom_from=custom_from)
+    squeeze = db.squeeze_ranking(period, limit=50, custom_from=custom_from)
+    cover = db.cover_rally_ranking(period, limit=50, custom_from=custom_from)
     return render_template('short.html',
                            period=period,
+                           custom_from=custom_from,
                            rank=rank,
                            new_short=new_short,
                            squeeze=squeeze,
