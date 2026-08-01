@@ -4,6 +4,8 @@
 
 <div class="page-title">🏆 ランキング</div>
 
+{% macro cap(v) %}{% if v %}{% if v >= 10000 %}{{ '{:.2f}兆'.format(v/10000) }}{% else %}{{ '{:,.0f}億'.format(v) }}{% endif %}{% else %}-{% endif %}{% endmacro %}
+
 {% macro rank_table(title, rows, kind) %}
 <div class="card">
   <h2>{{ title }}</h2>
@@ -13,6 +15,8 @@
         {% if kind=='surge' %}<th>倍率</th><th class="hide-sp">出来高</th>
         {% elif kind=='hit' %}<th>回数</th><th class="hide-sp">最終</th>
         {% else %}<th>前日比%</th><th class="hide-sp">終値</th>{% endif %}
+        <th title="全機関合算の空売り残高割合">空売り%</th>
+        <th class="hide-sp">時価総額</th>
       </tr></thead>
       <tbody>
         {% for r in rows %}
@@ -29,8 +33,11 @@
             <td class="{{ 'rise' if (r.change_pct or 0)>0 else 'fall' }}">{{ '{:+.2f}%'.format(r.change_pct) }}</td>
             <td class="hide-sp">{{ '{:,.0f}'.format(r.close) if r.close else '-' }}</td>
           {% endif %}
+          <td class="{{ 'rise' if r.short_ratio and r.short_ratio>=2 else 'muted' }}">
+            {{ '{:.2f}%'.format(r.short_ratio) if r.short_ratio else '-' }}</td>
+          <td class="hide-sp">{{ cap(r.market_cap_oku) }}</td>
         </tr>
-        {% else %}<tr><td colspan="4" class="empty">スキャンするとデータが溜まります</td></tr>{% endfor %}
+        {% else %}<tr><td colspan="6" class="empty">スキャンするとデータが溜まります</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>

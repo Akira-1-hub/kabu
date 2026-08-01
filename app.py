@@ -402,6 +402,9 @@ def short_page():
     new_short = db.short_new_entries(period, limit=50, **kw)
     squeeze = db.squeeze_ranking(period, limit=50, **kw)
     cover = db.cover_rally_ranking(period, limit=50, **kw)
+    top_ratio = db.short_top_ratio(50)
+    _add_cap_short(squeeze['rows'], cover['rows'], rank['increase'],
+                   rank['decrease'], new_short['entries'], top_ratio)
     return render_template('short.html',
                            period=period,
                            custom_from=custom_from,
@@ -410,7 +413,7 @@ def short_page():
                            new_short=new_short,
                            squeeze=squeeze,
                            cover=cover,
-                           top_ratio=db.short_top_ratio(50),
+                           top_ratio=top_ratio,
                            info=db.short_data_range())
 
 
@@ -424,12 +427,28 @@ def rankings():
     by_fall = sorted([p for p in prices if p.get('change_pct') is not None],
                      key=lambda x: x['change_pct'])[:50]
     name_map = {s['code']: s['name'] for s in db.list_tradable_codes()}
+    hits = db.get_hit_count_ranking(30)
     for lst in (by_surge, by_rise, by_fall):
         for p in lst:
             p['name'] = name_map.get(p['code'], '')
+    _add_cap_short(by_surge, by_rise, by_fall, hits)
     return render_template('rankings.html',
                            by_surge=by_surge, by_rise=by_rise, by_fall=by_fall,
-                           hit_ranking=db.get_hit_count_ranking(30))
+                           hit_ranking=hits)
+
+
+def _add_cap_short(*row_lists):
+    """行リストに時価総額(億円)と空売り比率(%)を付与（1回のDB読み込みで全リスト分）"""
+    funds = db.get_all_fundamentals()
+    latest = db.short_max_date()
+    totals = db.short_totals_asof(latest) if latest else {}
+    for rows in row_lists:
+        for r in rows:
+            code = r.get('code')
+            f = funds.get(code)
+            r['market_cap_oku'] = f.get('market_cap_oku') if f else None
+            t = totals.get(code)
+            r['short_ratio'] = round(t['total_ratio'], 2) if t and t.get('total_ratio') else None
 
 
 # ============================================================
