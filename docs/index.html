@@ -162,16 +162,16 @@
     <div class="page-title">🏆 ランキング</div>
     <div class="grid grid-2">
       <div class="card"><h2>📈 値上がり率</h2><div class="table-wrap" style="max-height:480px;overflow-y:auto"><table>
-        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>前日比%</th><th class="hide-sp">終値</th></tr></thead>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>前日比%</th><th class="hide-sp">終値</th><th title="全機関合算の空売り残高割合">空売り%</th><th class="hide-sp">時価総額</th></tr></thead>
         <tbody id="r-rise"></tbody></table></div></div>
       <div class="card"><h2>📉 値下がり率</h2><div class="table-wrap" style="max-height:480px;overflow-y:auto"><table>
-        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>前日比%</th><th class="hide-sp">終値</th></tr></thead>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>前日比%</th><th class="hide-sp">終値</th><th title="全機関合算の空売り残高割合">空売り%</th><th class="hide-sp">時価総額</th></tr></thead>
         <tbody id="r-fall"></tbody></table></div></div>
       <div class="card"><h2>🔥 出来高急増</h2><div class="table-wrap" style="max-height:480px;overflow-y:auto"><table>
-        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>倍率</th><th class="hide-sp">出来高</th></tr></thead>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>倍率</th><th class="hide-sp">出来高</th><th title="全機関合算の空売り残高割合">空売り%</th><th class="hide-sp">時価総額</th></tr></thead>
         <tbody id="r-surge"></tbody></table></div></div>
       <div class="card"><h2>🔁 継続出現（30日）</h2><div class="table-wrap" style="max-height:480px;overflow-y:auto"><table>
-        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>回数</th><th class="hide-sp">最終</th></tr></thead>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>回数</th><th class="hide-sp">最終</th><th title="全機関合算の空売り残高割合">空売り%</th><th class="hide-sp">時価総額</th></tr></thead>
         <tbody id="r-hit"></tbody></table></div></div>
     </div>
   </div>
@@ -194,31 +194,31 @@
     <div class="card" style="margin-bottom:14px;border-color:#5a3a2a">
       <h2 style="background:linear-gradient(90deg,rgba(255,107,107,.15),var(--bg3))">🔥 踏み上げ警戒（空売り増加 × 株価上昇）<span class="muted" id="sq-cnt"></span></h2>
       <div class="table-wrap" style="max-height:560px;overflow-y:auto"><table>
-        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>踏み上げ度</th><th>空売り増</th><th>残高%</th><th class="hide-sp">新規</th><th title="買い戻しに必要な日数＝空売り残高株数÷直近25日平均出来高">買戻日数</th><th>期間騰落</th><th title="直近3ヶ月の空売り単価に対する現在株価。＋＝直近ショートが含み損">直近含み</th><th class="hide-sp">続伸</th><th class="hide-sp">機関</th></tr></thead>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>踏み上げ度</th><th>空売り増</th><th>残高%</th><th class="hide-sp">新規</th><th title="買い戻しに必要な日数＝空売り残高株数÷直近25日平均出来高">買戻日数</th><th>期間騰落</th><th title="直近3ヶ月の空売り単価に対する現在株価。＋＝直近ショートが含み損">直近含み</th><th class="hide-sp">続伸</th><th class="hide-sp">時価総額</th><th class="hide-sp">機関</th></tr></thead>
         <tbody id="b-sq"></tbody></table></div>
     </div>
     <div class="card" style="margin-bottom:14px;border-color:#2a5a3a">
       <h2 style="background:linear-gradient(90deg,rgba(76,175,80,.15),var(--bg3))">🚀 踏み上げ進行中（買戻し × 上昇トレンド）<span class="muted" id="cv-cnt"></span></h2>
       <div class="table-wrap" style="max-height:560px;overflow-y:auto"><table>
-        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>進行度</th><th>買戻し</th><th>残高%</th><th>期間騰落</th><th class="hide-sp">続伸</th><th class="hide-sp">機関</th></tr></thead>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>進行度</th><th>買戻し</th><th>残高%</th><th>期間騰落</th><th class="hide-sp">続伸</th><th class="hide-sp">時価総額</th><th class="hide-sp">機関</th></tr></thead>
         <tbody id="b-cv"></tbody></table></div>
     </div>
     <div class="grid grid-2">
       <div class="card"><h2>🔼 空売り増加（積み上がり）</h2><div class="table-wrap" style="max-height:520px;overflow-y:auto"><table>
-        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>残高%</th><th class="hide-sp">前回%</th><th>増減</th></tr></thead>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>残高%</th><th class="hide-sp">前回%</th><th>増減</th><th class="hide-sp">時価総額</th></tr></thead>
         <tbody id="b-inc"></tbody></table></div></div>
       <div class="card"><h2>🔽 空売り減少（買い戻し）</h2><div class="table-wrap" style="max-height:520px;overflow-y:auto"><table>
-        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>残高%</th><th class="hide-sp">前回%</th><th>増減</th></tr></thead>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>残高%</th><th class="hide-sp">前回%</th><th>増減</th><th class="hide-sp">時価総額</th></tr></thead>
         <tbody id="b-dec"></tbody></table></div></div>
     </div>
     <div class="card" style="margin-top:14px"><h2>🆕 新規空売り（この期間に新たに建てられたポジション）<span class="muted" id="nw-cnt"></span></h2>
       <div class="table-wrap" style="max-height:480px;overflow-y:auto"><table>
-        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th class="txt-left">新規参入した機関</th><th>機関%</th><th title="その銘柄の全機関合算の空売り残高割合">全体%</th><th class="hide-sp">建玉日</th></tr></thead>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th class="txt-left">新規参入した機関</th><th>機関%</th><th title="その銘柄の全機関合算の空売り残高割合">全体%</th><th class="hide-sp">時価総額</th><th class="hide-sp">建玉日</th></tr></thead>
         <tbody id="b-new"></tbody></table></div>
     </div>
     <div class="card" style="margin-top:14px"><h2>🏔 空売り残高割合トップ（積み上がっている銘柄）</h2>
       <div class="table-wrap" style="max-height:420px;overflow-y:auto"><table>
-        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>残高割合</th><th class="hide-sp">残高株数</th><th>機関数</th><th class="hide-sp">計算日</th></tr></thead>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>残高割合</th><th class="hide-sp">残高株数</th><th>機関数</th><th class="hide-sp">時価総額</th><th class="hide-sp">計算日</th></tr></thead>
         <tbody id="b-top"></tbody></table></div>
     </div>
   </div>
@@ -260,6 +260,19 @@ function fmtNum(n){ return n==null ? '-' : Number(n).toLocaleString(); }
 function fmtPct(n){ return n==null ? '-' : (n>=0?'+':'') + Number(n).toFixed(2) + '%'; }
 function pctClass(n){ return n==null ? '' : (n>0?'rise':(n<0?'fall':'')); }
 function lk(code,label){ return `<a href="detail.html?code=${code}">${label==null?code:label}</a>`; }
+
+// 時価総額(億円)・空売り比率を全銘柄ぶん保持し、各表で使い回す
+const META = {};
+function fmtCap(v){
+  if(v==null) return '-';
+  return v>=10000 ? (v/10000).toFixed(2)+'兆' : Math.round(v).toLocaleString()+'億';
+}
+function capOf(code){ return fmtCap((META[code]||{}).cap); }
+function srCell(code){
+  const v=(META[code]||{}).sr;
+  return v==null ? '<td class="muted">-</td>'
+                 : `<td class="${v>=2?'rise':'muted'}">${v.toFixed(2)}%</td>`;
+}
 function goStock(e){ e.preventDefault(); const c=document.getElementById('search-code').value.trim(); if(c) location.href='detail.html?code='+c; return false; }
 
 // ===== ウォッチ（localStorage） =====
@@ -316,7 +329,9 @@ fetch('data.json').then(r=>r.json()).then(j=>{
   D=j;
   document.getElementById('updated').textContent = '更新 '+(j.updated||'-');
   dPrices = (j.prices||[]).map(p=>({code:p.code,name:p.name,date:p.date,close:p.close,
-                                    change:p.change,pct:p.pct,vol:p.vol,ratio:p.ratio}));
+                                    change:p.change,pct:p.pct,vol:p.vol,ratio:p.ratio,
+                                    cap:p.cap,sr:p.sr}));
+  dPrices.forEach(p=>{ META[p.code]={cap:p.cap, sr:p.sr}; });
   renderDash(); renderStocks(); renderGainers(); renderRankings(); renderShort();
   showTab(currentTab());
 }).catch(e=>{ document.getElementById('updated').textContent='data.json 読込失敗'; });
@@ -463,12 +478,13 @@ function renderGainers(){
 
 // ===== ランキング（pricesから算出） =====
 function rrow(d,kind){
+  const tail = srCell(d.code) + `<td class="hide-sp">${capOf(d.code)}</td>`;
   if(kind==='surge') return `<tr><td class="txt-left code">${lk(d.code,d.code)}</td>
     <td class="txt-left"><a href="detail.html?code=${d.code}" style="color:inherit">${d.name||'-'}</a></td>
-    <td><span class="badge accent">${(d.ratio||0).toFixed(1)}x</span></td><td class="hide-sp">${fmtNum(d.vol)}</td></tr>`;
+    <td><span class="badge accent">${(d.ratio||0).toFixed(1)}x</span></td><td class="hide-sp">${fmtNum(d.vol)}</td>${tail}</tr>`;
   return `<tr><td class="txt-left code">${lk(d.code,d.code)}</td>
     <td class="txt-left"><a href="detail.html?code=${d.code}" style="color:inherit">${d.name||'-'}</a></td>
-    <td class="${pctClass(d.pct)}">${fmtPct(d.pct)}</td><td class="hide-sp">${d.close!=null?Math.round(d.close).toLocaleString():'-'}</td></tr>`;
+    <td class="${pctClass(d.pct)}">${fmtPct(d.pct)}</td><td class="hide-sp">${d.close!=null?Math.round(d.close).toLocaleString():'-'}</td>${tail}</tr>`;
 }
 function renderRankings(){
   if(!D) return;
@@ -476,14 +492,15 @@ function renderRankings(){
   const rise=[...withPct].sort((a,b)=>b.pct-a.pct).slice(0,30);
   const fall=[...withPct].sort((a,b)=>a.pct-b.pct).slice(0,30);
   const surge=dPrices.filter(d=>d.ratio!=null).sort((a,b)=>b.ratio-a.ratio).slice(0,30);
-  document.getElementById('r-rise').innerHTML = rise.map(d=>rrow(d,'rise')).join('') || '<tr><td colspan="4" class="empty">なし</td></tr>';
-  document.getElementById('r-fall').innerHTML = fall.map(d=>rrow(d,'fall')).join('') || '<tr><td colspan="4" class="empty">なし</td></tr>';
-  document.getElementById('r-surge').innerHTML = surge.map(d=>rrow(d,'surge')).join('') || '<tr><td colspan="4" class="empty">なし</td></tr>';
+  document.getElementById('r-rise').innerHTML = rise.map(d=>rrow(d,'rise')).join('') || '<tr><td colspan="6" class="empty">なし</td></tr>';
+  document.getElementById('r-fall').innerHTML = fall.map(d=>rrow(d,'fall')).join('') || '<tr><td colspan="6" class="empty">なし</td></tr>';
+  document.getElementById('r-surge').innerHTML = surge.map(d=>rrow(d,'surge')).join('') || '<tr><td colspan="6" class="empty">なし</td></tr>';
   document.getElementById('r-hit').innerHTML = (D.hits30||[]).slice(0,30).map(r=>`<tr>
     <td class="txt-left code">${lk(r.code,r.code)}</td>
     <td class="txt-left"><a href="detail.html?code=${r.code}" style="color:inherit">${r.name||'-'}</a></td>
     <td><span class="badge accent">${r.hit_count}回</span></td>
-    <td class="hide-sp muted">${r.last_date||''}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">なし</td></tr>';
+    <td class="hide-sp muted">${r.last_date||''}</td>
+    ${srCell(r.code)}<td class="hide-sp">${capOf(r.code)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">なし</td></tr>';
 }
 
 // ===== 空売り =====
@@ -508,7 +525,8 @@ function renderShort(){
     <td class="rise"><b>+${r.price_gain.toFixed(1)}%</b></td>
     <td>${r.underwater!=null?`<b class="${r.underwater>0?'rise':'muted'}">${(r.underwater>=0?'+':'')+Math.round(r.underwater)}%</b>`:'<span class="muted">-</span>'}</td>
     <td class="hide-sp muted">${r.up_days}日</td>
-    <td class="hide-sp muted">${r.inst}</td></tr>`).join('') || '<tr><td colspan="11" class="empty">該当なし</td></tr>';
+    <td class="hide-sp">${capOf(r.code)}</td>
+    <td class="hide-sp muted">${r.inst}</td></tr>`).join('') || '<tr><td colspan="12" class="empty">該当なし</td></tr>';
 
   const cv=S.cover||[];
   document.getElementById('cv-cnt').textContent = `${cv.length}件 / 株価${S.price_latest||'-'}`;
@@ -520,13 +538,15 @@ function renderShort(){
     <td><b>${r.cur_ratio.toFixed(1)}%</b></td>
     <td class="rise"><b>+${r.price_gain.toFixed(1)}%</b></td>
     <td class="hide-sp muted">${r.up_days}日</td>
-    <td class="hide-sp muted">${r.inst}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">該当なし</td></tr>';
+    <td class="hide-sp">${capOf(r.code)}</td>
+    <td class="hide-sp muted">${r.inst}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">該当なし</td></tr>';
 
   const chg=(rows,c)=>rows.map(r=>`<tr>
     <td class="txt-left code">${lk(r.code,r.code)}</td>
     <td class="txt-left"><a href="detail.html?code=${r.code}" style="color:inherit">${r.name||'-'}</a></td>
     <td><b>${r.cur_ratio.toFixed(2)}%</b></td><td class="hide-sp muted">${r.past_ratio.toFixed(2)}%</td>
-    <td class="${c}">${(r.delta_ratio>=0?'+':'')+r.delta_ratio.toFixed(2)}pt</td></tr>`).join('')||'<tr><td colspan="5" class="empty">なし</td></tr>';
+    <td class="${c}">${(r.delta_ratio>=0?'+':'')+r.delta_ratio.toFixed(2)}pt</td>
+    <td class="hide-sp">${capOf(r.code)}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">なし</td></tr>';
   document.getElementById('b-inc').innerHTML = chg(S.increase||[],'rise');
   document.getElementById('b-dec').innerHTML = chg(S.decrease||[],'fall');
 
@@ -536,14 +556,16 @@ function renderShort(){
     <td class="txt-left"><a href="detail.html?code=${r.code}" style="color:inherit">${r.name||'-'}</a></td>
     <td class="txt-left">${r.institution}</td><td><b class="rise">${r.ratio.toFixed(2)}%</b></td>
     <td>${r.total_ratio!=null?`<b>${r.total_ratio.toFixed(2)}%</b>`:'<span class="muted">-</span>'}</td>
-    <td class="hide-sp muted">${r.date}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">なし</td></tr>';
+    <td class="hide-sp">${capOf(r.code)}</td>
+    <td class="hide-sp muted">${r.date}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">なし</td></tr>';
 
   document.getElementById('b-top').innerHTML = (D.short.top||[]).map(r=>`<tr>
     <td class="txt-left code">${lk(r.code,r.code)}</td>
     <td class="txt-left"><a href="detail.html?code=${r.code}" style="color:inherit">${r.name||'-'}</a></td>
     <td><b class="rise">${r.total_ratio.toFixed(2)}%</b></td>
     <td class="hide-sp">${(r.total_shares||0).toLocaleString()}</td>
-    <td>${r.inst}</td><td class="hide-sp muted">${r.date}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">なし</td></tr>';
+    <td>${r.inst}</td><td class="hide-sp">${capOf(r.code)}</td>
+    <td class="hide-sp muted">${r.date}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">なし</td></tr>';
 }
 
 // ===== ウォッチ =====

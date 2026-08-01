@@ -66,13 +66,20 @@ def build():
     conn.close()
 
     # ---- 一覧 data.json ----
+    # 時価総額(cap)と空売り比率(sr)は全銘柄ぶんここに持たせ、公開版の各表で使い回す
+    _latest_short = db.short_max_date()
+    _totals = db.short_totals_asof(_latest_short) if _latest_short else {}
     latest_prices = []
     for code, rows in prices_by_code.items():
         p = rows[-1]
+        f = funds.get(code)
+        t = _totals.get(code)
         latest_prices.append({
             'code': code, 'name': stocks.get(code, {}).get('name', ''),
             'date': p['date'], 'close': p['close'], 'change': p['change'],
             'pct': p['change_pct'], 'vol': p['volume'], 'ratio': p['volume_ratio'],
+            'cap': f.get('market_cap_oku') if f else None,
+            'sr': round(t['total_ratio'], 2) if t and t.get('total_ratio') else None,
         })
 
     short_sum = {'latest': db.short_max_date(), 'top': db.short_top_ratio(50),
@@ -191,7 +198,8 @@ def build():
 
     # サイズ集計
     total = 0
-    for root, _, files in os.walk(SITE):
+    for root, dirs, files in os.walk(SITE):
+        dirs[:] = [d for d in dirs if d != '.git']   # 公開作業用の.gitは実サイズに含めない
         for fn in files:
             total += os.path.getsize(os.path.join(root, fn))
     dt = (datetime.now() - t0).total_seconds()
