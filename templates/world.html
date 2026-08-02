@@ -15,7 +15,7 @@
       </tr></thead>
       <tbody>
         {% for r in rows %}
-        <tr>
+        <tr onclick="showChart('{{ r.symbol }}','{{ r.name }}')" style="cursor:pointer">
           <td class="txt-left"><b>{{ r.name }}</b></td>
           <td class="txt-left muted hide-sp" style="font-size:11px">{{ r.symbol }}</td>
           <td class="{{ 'rise' if (r.pct or 0)>0 else ('fall' if (r.pct or 0)<0 else '') }}">
@@ -42,6 +42,23 @@
 </div>
 <div class="status-line" id="world-status"></div>
 
+<!-- チャート（行クリックで表示） -->
+<div class="card" id="chart-card" style="margin-bottom:14px;display:none">
+  <h2><span id="chart-title">チャート</span>
+    <span id="wrange" style="display:flex;gap:4px">
+      <button class="btn btn-sm btn-ghost wbtn" data-d="22">1M</button>
+      <button class="btn btn-sm btn-ghost wbtn" data-d="66">3M</button>
+      <button class="btn btn-sm btn-ghost wbtn on" data-d="130">6M</button>
+      <button class="btn btn-sm btn-ghost wbtn" data-d="250">1Y</button>
+      <button class="btn btn-sm btn-ghost wbtn" data-d="0">全部</button>
+      <button class="btn btn-sm btn-ghost color-swap-btn" onclick="toggleColors()" title="上昇/下落の色を反転" style="margin-left:8px">🔁 色反転</button>
+    </span>
+  </h2>
+  <div class="body"><div id="wchart"></div></div>
+</div>
+<style>.wbtn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.color-swap-btn.on{background:var(--accent2);border-color:var(--accent2);color:#fff}</style>
+
 {{ row_table('📊 指数・為替・商品', idx, '日本／米国') }}
 {{ row_table('🇺🇸 米国株（半導体・ハイテク）', us, '変化率の高い順') }}
 
@@ -50,8 +67,33 @@
 </div>
 
 {% endblock %}
+{% block head %}<script src="{{ url_for('static', filename='chart.js') }}"></script>{% endblock %}
 {% block script %}
 <script>
+// ===== チャート（行クリックで表示） =====
+let WCHART = null;
+async function showChart(sym, name){
+  const rows = await (await fetch('/api/world/bars/' + encodeURIComponent(sym))).json();
+  const bars = rows.filter(x=>x.open!=null&&x.high!=null&&x.low!=null&&x.close!=null)
+                   .map(x=>({time:x.date, open:x.open, high:x.high, low:x.low,
+                             close:x.close, volume:x.volume||0}));
+  const card = document.getElementById('chart-card');
+  card.style.display = 'block';
+  document.getElementById('chart-title').textContent = `📈 ${name}（${sym}）`;
+  if(!bars.length){ document.getElementById('wchart').innerHTML='<div class="empty">チャートデータがありません</div>'; return; }
+  WCHART = makeStockChart(document.getElementById('wchart'), null, bars, [], {}, []);
+  window.refreshChartColors = () => { if(WCHART) WCHART.refreshColors(); };
+  const on = document.querySelector('.wbtn.on');
+  WCHART.setDays(on ? parseInt(on.dataset.d) : 130);
+  card.scrollIntoView({behavior:'smooth', block:'start'});
+}
+document.querySelectorAll('.wbtn').forEach(b=>{
+  b.onclick = (e)=>{ e.stopPropagation();
+    document.querySelectorAll('.wbtn').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    if(WCHART) WCHART.setDays(parseInt(b.dataset.d)); };
+});
+
 async function updateWorld(){
   const r = await (await fetch('/api/world/update',{method:'POST'})).json();
   if(!r.ok){ alert(r.msg); return; }

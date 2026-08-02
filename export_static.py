@@ -41,7 +41,12 @@ def _world_for_site():
             continue
         out.append({'symbol': sym, 'name': name, 'kind': kind, 'unit': unit,
                     'date': d['date'], 'close': d['close'],
-                    'change': d['change'], 'pct': d['pct']})
+                    'change': d['change'], 'pct': d['pct'],
+                    # チャート用（公開版は直近1年ぶん）
+                    'bars': [{'d': b['date'], 'o': b['open'], 'h': b['high'],
+                              'l': b['low'], 'c': b['close'], 'v': b['volume']}
+                             for b in db.world_bars(sym, days=260)
+                             if b['open'] is not None and b['close'] is not None]})
     return out
 
 

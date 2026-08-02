@@ -250,9 +250,13 @@ function makeStockChart(priceEl, shortEl, bars, shorts, marks, lines) {
     if (hover == null || hover < 0 || hover >= N) { tip.style.display = 'none'; return; }
     const d = bars[hover], sv = shortAligned[hover];
     const up = d.close >= d.open;
+    // 指数のように小数が多い値でも読めるよう、小数2桁までに丸めて桁区切りを付ける
+    const px = v => v == null ? '-' :
+      (Math.round(v * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 });
     tip.innerHTML =
       `<b>${fmtDate(d.time, true)}</b><br>` +
-      `始${d.open} 高${d.high} 安${d.low} <b style="color:${up ? UP : DOWN}">終${d.close}</b><br>` +
+      `始${px(d.open)} 高${px(d.high)} 安${px(d.low)} ` +
+      `<b style="color:${up ? UP : DOWN}">終${px(d.close)}</b><br>` +
       `出来高 ${fmtVol(d.volume || 0)}` +
       (sv != null ? ` ／ 空売り <b style="color:${UP}">${sv.toFixed(2)}%</b>` : '');
     tip.style.display = 'block';

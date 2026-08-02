@@ -468,6 +468,11 @@ def api_world_update():
     return jsonify({'ok': True})
 
 
+@app.route('/api/world/bars/<path:symbol>')
+def api_world_bars(symbol):
+    return jsonify(db.world_bars(symbol, days=500))
+
+
 @app.route('/api/world/status')
 def api_world_status():
     return jsonify({'running': world_state['running'], 'status': world_state['status'],

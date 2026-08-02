@@ -131,6 +131,9 @@ CREATE TABLE IF NOT EXISTS fundamentals (
 CREATE TABLE IF NOT EXISTS world_prices (
     symbol      TEXT NOT NULL,     -- yfinanceのシンボル（^N225 / AAPL など）
     date        TEXT NOT NULL,     -- 現地の取引日 YYYY-MM-DD
+    open        REAL,
+    high        REAL,
+    low         REAL,
     close       REAL,
     change      REAL,
     change_pct  REAL,
@@ -160,6 +163,11 @@ def init_db():
         conn.execute('ALTER TABLE fundamentals ADD COLUMN op_margin REAL')
     except Exception:
         pass
+    for col in ('open', 'high', 'low'):   # world_prices にOHLCを後付け
+        try:
+            conn.execute(f'ALTER TABLE world_prices ADD COLUMN {col} REAL')
+        except Exception:
+            pass
     conn.commit()
     conn.close()
 
@@ -1307,13 +1315,26 @@ def get_fundamentals(code):
 
 
 def bulk_save_world(rows):
-    """world_prices へ一括保存（symbol,date,close,change,change_pct,volume）"""
+    """world_prices へ一括保存
+    rows = (symbol,date,open,high,low,close,change,change_pct,volume)
+    """
     conn = get_conn()
     conn.executemany(
         'INSERT OR REPLACE INTO world_prices '
-        '(symbol,date,close,change,change_pct,volume) VALUES (?,?,?,?,?,?)', rows)
+        '(symbol,date,open,high,low,close,change,change_pct,volume) '
+        'VALUES (?,?,?,?,?,?,?,?,?)', rows)
     conn.commit()
     conn.close()
+
+
+def world_bars(symbol, days=500):
+    """1シンボルのローソク足データ（古い順）"""
+    conn = get_conn()
+    rows = conn.execute(
+        'SELECT date,open,high,low,close,volume,change_pct FROM world_prices '
+        'WHERE symbol=? ORDER BY date DESC LIMIT ?', (symbol, days)).fetchall()
+    conn.close()
+    return [dict(r) for r in reversed(rows)]
 
 
 def world_latest():

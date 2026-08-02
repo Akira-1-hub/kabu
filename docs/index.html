@@ -6,6 +6,7 @@
 <title>投資DB - 閲覧用</title>
 <link rel="stylesheet" href="style.css">
 <script src="heatmap.js"></script>
+<script src="chart.js"></script>
 <style>
   /* 静的ビューア固有 */
   .panel{display:none}
@@ -192,6 +193,21 @@
     <div class="page-title">🌏 指数・米国株
       <span class="muted" id="w-note" style="font-size:13px;font-weight:400"></span>
     </div>
+    <div class="card" id="w-chart-card" style="margin-bottom:14px;display:none">
+      <h2><span id="w-chart-title">チャート</span>
+        <span id="w-range" style="display:flex;gap:4px">
+          <button class="btn btn-sm btn-ghost wbtn" data-d="22">1M</button>
+          <button class="btn btn-sm btn-ghost wbtn" data-d="66">3M</button>
+          <button class="btn btn-sm btn-ghost wbtn on" data-d="130">6M</button>
+          <button class="btn btn-sm btn-ghost wbtn" data-d="0">全部</button>
+          <button class="btn btn-sm btn-ghost color-swap-btn" onclick="toggleColors()" title="上昇/下落の色を反転" style="margin-left:8px">🔁 色反転</button>
+        </span>
+      </h2>
+      <div class="body"><div id="w-chart"></div></div>
+    </div>
+    <style>.wbtn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+    .color-swap-btn.on{background:var(--accent2);border-color:var(--accent2);color:#fff}</style>
+
     <div class="card" style="margin-bottom:14px">
       <h2>📊 指数・為替・商品<span class="muted">日本／米国</span></h2>
       <div class="table-wrap"><table>
@@ -624,7 +640,7 @@ function renderWorld(){
   const fmtC = v => v==null ? '-' : (v>=1000 ? Math.round(v).toLocaleString()
                                              : v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}));
   const cl = v => v>0?'rise':(v<0?'fall':'muted');
-  const tr = r => `<tr>
+  const tr = r => `<tr onclick="showWorldChart('${r.symbol}')" style="cursor:pointer">
     <td class="txt-left"><b>${r.name}</b></td>
     <td class="txt-left muted hide-sp" style="font-size:11px">${r.symbol}</td>
     <td class="${cl(r.pct)}"><b style="font-size:14px">${fmtC(r.close)}</b></td>
@@ -639,6 +655,31 @@ function renderWorld(){
   const d = rows.length ? rows.map(r=>r.date).sort().slice(-1)[0] : null;
   document.getElementById('w-note').textContent = d ? `最新 ${d}（${rows.length}銘柄）` : '';
 }
+
+// 行クリックでローソク足チャートを表示
+let WCHART=null;
+function showWorldChart(sym){
+  const r = (D.world||[]).find(x=>x.symbol===sym);
+  if(!r) return;
+  const bars = (r.bars||[]).map(b=>({time:b.d, open:b.o, high:b.h, low:b.l,
+                                     close:b.c, volume:b.v||0}));
+  const card = document.getElementById('w-chart-card');
+  card.style.display='block';
+  document.getElementById('w-chart-title').textContent = `📈 ${r.name}（${r.symbol}）`;
+  if(!bars.length){ document.getElementById('w-chart').innerHTML='<div class="empty">チャートデータがありません</div>'; return; }
+  WCHART = makeStockChart(document.getElementById('w-chart'), null, bars, [], {}, []);
+  window.refreshChartColors = () => { if(WCHART) WCHART.refreshColors(); };
+  const on = document.querySelector('.wbtn.on');
+  WCHART.setDays(on ? parseInt(on.dataset.d) : 130);
+  card.scrollIntoView({behavior:'smooth', block:'start'});
+}
+document.addEventListener('click', e=>{
+  const b = e.target.closest('.wbtn'); if(!b) return;
+  e.stopPropagation();
+  document.querySelectorAll('.wbtn').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  if(WCHART) WCHART.setDays(parseInt(b.dataset.d));
+});
 
 // ===== ウォッチ =====
 function renderWatch(){

@@ -75,12 +75,14 @@ def fetch_world(period='1mo', log=print):
         closes = sub['Close']
         chg = closes.diff()
         pct = closes.pct_change() * 100
+        num = lambda x: round(float(x), 4) if pd.notna(x) else None
         for i, (ts, r) in enumerate(sub.iterrows()):
             v = r.get('Volume')
             rows.append((
                 s, ts.strftime('%Y-%m-%d'),
+                num(r.get('Open')), num(r.get('High')), num(r.get('Low')),
                 round(float(r['Close']), 4),
-                round(float(chg.iloc[i]), 4) if pd.notna(chg.iloc[i]) else None,
+                num(chg.iloc[i]),
                 round(float(pct.iloc[i]), 3) if pd.notna(pct.iloc[i]) else None,
                 int(v) if v is not None and pd.notna(v) else None,
             ))
