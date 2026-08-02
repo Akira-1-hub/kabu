@@ -110,6 +110,27 @@ function makeHeatmap(container, rows, opts) {
   // ---- 描画 -------------------------------------------------------------
   const GAP = 2, HEAD = 15;
 
+  // タイル幅に収まるところまで銘柄名を詰める（はみ出し・文字切れを起こさない）
+  const CW = 10, CW_ASCII = 5.6;          // 10pxフォントでの全角/半角のおよその幅
+  const chw = ch => ch.charCodeAt(0) > 0x2E7F ? CW : CW_ASCII;
+  function fit(s, avail) {
+    s = String(s || '');
+    let w = 0;
+    for (let i = 0; i < s.length; i++) w += chw(s[i]);
+    if (w <= avail) return esc(s);
+    let out = '', acc = 0;
+    const room = avail - CW_ASCII * 1.4;   // 省略記号のぶんを空けておく
+    for (const ch of s) {
+      const cw = chw(ch);
+      if (acc + cw > room) break;
+      out += ch; acc += cw;
+    }
+    // 1〜2文字だけ残っても意味が読めないので、その場合は出さない（詳細はツールチップ）
+    return out.length >= 3 ? esc(out) + '…' : '';
+  }
+  const esc = s => String(s).replace(/[&<>"]/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
   function renderMap(host) {
     const data = current();
     const W = host.clientWidth || 900;
@@ -131,7 +152,7 @@ function makeHeatmap(container, rows, opts) {
       const showHead = h > HEAD + 12 && w > 46;
       const inner = { x: 0, y: showHead ? HEAD : 0, w: w - GAP, h: h - (showHead ? HEAD : 0) - GAP };
       html += `<div class="hm-sec" style="left:${x}px;top:${y}px;width:${w - GAP}px;height:${h - GAP}px">`;
-      if (showHead) html += `<div class="hm-sec-t">${g.d.key}</div>`;
+      if (showHead) html += `<div class="hm-sec-t">${esc(g.d.key)}</div>`;
       const tiles = squarify(g.d.list.map(r => ({ value: r.cap, r })), inner);
       for (const t of tiles) {
         const r = t.d.r, q = t.rect;
@@ -139,11 +160,14 @@ function makeHeatmap(container, rows, opts) {
         const v = mode === 'pct' ? r.pct : r.sr;
         const col = R.colors[binOf(v, R.bins)];
         const tw = q.w - GAP, th = q.h - GAP;
+        // 銘柄名が入る時だけラベルを出す（名前なしで数値だけ残さない。詳細はツールチップ）
         let label = '';
-        if (tw >= 42 && th >= 30) {
-          label = `<span class="hm-c">${r.code}</span><span class="hm-v">${R.fmt(v)}</span>`;
-        } else if (tw >= 30 && th >= 16) {
-          label = `<span class="hm-c">${r.code}</span>`;
+        if (tw >= 28 && th >= 15) {
+          const nm = fit(r.name || r.code, tw - 6);
+          if (nm) {
+            label = `<span class="hm-c">${nm}</span>` +
+                    (tw >= 40 && th >= 28 ? `<span class="hm-v">${R.fmt(v)}</span>` : '');
+          }
         }
         html += `<a class="hm-t" href="${link(r.code)}" data-code="${r.code}"
           style="left:${q.x}px;top:${q.y}px;width:${tw}px;height:${th}px;background:${col}">${label}</a>`;
@@ -161,8 +185,8 @@ function makeHeatmap(container, rows, opts) {
       el.addEventListener('mousemove', e => {
         const r = by[el.dataset.code]; if (!r) return;
         tip.innerHTML =
-          `<b>${r.code} ${r.name}</b><br>` +
-          `<span class="muted">${r.sector}</span><br>` +
+          `<b>${r.code} ${esc(r.name)}</b><br>` +
+          `<span class="muted">${esc(r.sector)}</span><br>` +
           `前日比 <b>${ramps().pct.fmt(r.pct)}</b>　終値 ${r.close == null ? '-' : Math.round(r.close).toLocaleString()}<br>` +
           `空売り <b>${r.sr == null ? '-' : r.sr.toFixed(2) + '%'}</b>　時価総額 <b>${fmtCapJ(r.cap)}</b>`;
         tip.style.display = 'block';
@@ -192,8 +216,8 @@ function makeHeatmap(container, rows, opts) {
       '<th>前日比%</th><th>空売り%</th><th>時価総額</th></tr></thead><tbody>' +
       data.map(r => `<tr>
         <td class="txt-left code"><a href="${link(r.code)}">${r.code}</a></td>
-        <td class="txt-left">${r.name}</td>
-        <td class="txt-left muted">${r.sector}</td>
+        <td class="txt-left">${esc(r.name)}</td>
+        <td class="txt-left muted">${esc(r.sector)}</td>
         <td class="${r.pct > 0 ? 'rise' : (r.pct < 0 ? 'fall' : 'muted')}">${ramps().pct.fmt(r.pct)}</td>
         <td class="${r.sr >= 2 ? 'rise' : 'muted'}">${r.sr == null ? '-' : r.sr.toFixed(2) + '%'}</td>
         <td>${fmtCapJ(r.cap)}</td></tr>`).join('') +
@@ -281,8 +305,9 @@ function _hmStyle() {
   align-items:center;justify-content:center;overflow:hidden;text-decoration:none;
   line-height:1.15;transition:filter .1s}
 .hm-t:hover{filter:brightness(1.35);text-decoration:none}
-.hm-t .hm-c{font-size:10px;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.55)}
-.hm-t .hm-v{font-size:10px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.55)}
+.hm-t .hm-c,.hm-t .hm-v{max-width:100%;padding:0 2px;white-space:nowrap;overflow:hidden;
+  color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.55);font-size:10px}
+.hm-t .hm-c{font-weight:700}
 .hm-tip{position:absolute;background:rgba(20,20,40,.95);border:1px solid var(--border);
   border-radius:6px;padding:6px 9px;font-size:11px;color:var(--text);pointer-events:none;
   white-space:nowrap;z-index:20;display:none;line-height:1.6}
