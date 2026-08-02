@@ -27,6 +27,24 @@ def jnum(x):
     return None if x is None else (round(float(x), 4) if isinstance(x, float) else x)
 
 
+def _world_for_site():
+    """指数・米国株（公開用に表示名などのメタを付ける）"""
+    try:
+        import fetch_world
+    except Exception:
+        return []
+    latest = db.world_latest()
+    out = []
+    for sym, name, kind, unit in fetch_world.SYMBOLS:
+        d = latest.get(sym)
+        if not d:
+            continue
+        out.append({'symbol': sym, 'name': name, 'kind': kind, 'unit': unit,
+                    'date': d['date'], 'close': d['close'],
+                    'change': d['change'], 'pct': d['pct']})
+    return out
+
+
 def cost_slice(c):
     """compute_cost_basis の結果を公開用に間引く"""
     return {'agg': c['agg'], 'rows': c['rows'][:15], 'close': c['close']}
@@ -105,6 +123,7 @@ def build():
         'gainers_down': db.gainers_ranking(limit=100, falling=True),
         'recent_tags': recent_tags,
         'flow_label': db.FLOW_LABEL,
+        'world': _world_for_site(),
     }
     with open(os.path.join(SITE, 'data.json'), 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, separators=(',', ':'))

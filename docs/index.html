@@ -24,6 +24,7 @@
   <a class="tab" data-tab="gainers" href="#gainers">上昇率</a>
   <a class="tab" data-tab="rankings" href="#rankings">ランキング</a>
   <a class="tab" data-tab="heatmap" href="#heatmap">ヒートマップ</a>
+  <a class="tab" data-tab="world" href="#world">指数・米国株</a>
   <a class="tab" data-tab="short" href="#short">空売り</a>
   <a class="tab" data-tab="watch" href="#watch">ウォッチ</a>
   <span class="spacer"></span>
@@ -186,6 +187,30 @@
     <div id="heatmap"></div>
   </div>
 
+  <!-- ===== 指数・米国株 ===== -->
+  <div class="panel" id="p-world">
+    <div class="page-title">🌏 指数・米国株
+      <span class="muted" id="w-note" style="font-size:13px;font-weight:400"></span>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <h2>📊 指数・為替・商品<span class="muted">日本／米国</span></h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="txt-left">銘柄名</th><th class="txt-left hide-sp">シンボル</th>
+          <th>現在値</th><th>前日比</th><th>変化率</th><th class="hide-sp">日付</th></tr></thead>
+        <tbody id="w-idx"></tbody></table></div>
+    </div>
+    <div class="card">
+      <h2>🇺🇸 米国株（半導体・ハイテク）<span class="muted">変化率の高い順</span></h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="txt-left">銘柄名</th><th class="txt-left hide-sp">シンボル</th>
+          <th>現在値</th><th>前日比</th><th>変化率</th><th class="hide-sp">日付</th></tr></thead>
+        <tbody id="w-us"></tbody></table></div>
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:8px">
+      ※出典 Yahoo Finance。日付は現地の取引日です。
+    </div>
+  </div>
+
   <!-- ===== 空売り ===== -->
   <div class="panel" id="p-short">
     <div class="page-title">📉 空売り残高ランキング
@@ -319,7 +344,7 @@ function injectStars(){
 new MutationObserver(()=>injectStars()).observe(document.body,{childList:true,subtree:true});
 
 // ===== タブ =====
-const TABS=['dashboard','stocks','gainers','rankings','heatmap','short','watch'];
+const TABS=['dashboard','stocks','gainers','rankings','heatmap','world','short','watch'];
 function currentTab(){ const h=location.hash.replace('#',''); return TABS.includes(h)?h:'dashboard'; }
 function showTab(t){
   TABS.forEach(x=>{
@@ -356,7 +381,7 @@ fetch('data.json').then(r=>r.json()).then(j=>{
                                     change:p.change,pct:p.pct,vol:p.vol,ratio:p.ratio,
                                     cap:p.cap,sr:p.sr,sec:p.sec}));
   dPrices.forEach(p=>{ META[p.code]={cap:p.cap, sr:p.sr}; });
-  renderDash(); renderStocks(); renderGainers(); renderRankings(); renderShort();
+  renderDash(); renderStocks(); renderGainers(); renderRankings(); renderShort(); renderWorld();
   showTab(currentTab());
 }).catch(e=>{ document.getElementById('updated').textContent='data.json 読込失敗'; });
 
@@ -590,6 +615,29 @@ function renderShort(){
     <td class="hide-sp">${(r.total_shares||0).toLocaleString()}</td>
     <td>${r.inst}</td><td class="hide-sp">${capOf(r.code)}</td>
     <td class="hide-sp muted">${r.date}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">なし</td></tr>';
+}
+
+// ===== 指数・米国株 =====
+function renderWorld(){
+  if(!D) return;
+  const rows = D.world||[];
+  const fmtC = v => v==null ? '-' : (v>=1000 ? Math.round(v).toLocaleString()
+                                             : v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}));
+  const cl = v => v>0?'rise':(v<0?'fall':'muted');
+  const tr = r => `<tr>
+    <td class="txt-left"><b>${r.name}</b></td>
+    <td class="txt-left muted hide-sp" style="font-size:11px">${r.symbol}</td>
+    <td class="${cl(r.pct)}"><b style="font-size:14px">${fmtC(r.close)}</b></td>
+    <td class="${cl(r.change)}">${r.change==null?'-':(r.change>=0?'+':'')+r.change.toFixed(2)}</td>
+    <td class="${cl(r.pct)}"><b>${r.pct==null?'-':(r.pct>=0?'+':'')+r.pct.toFixed(2)+'%'}</b></td>
+    <td class="hide-sp muted">${r.date||''}</td></tr>`;
+  const idx = rows.filter(r=>r.kind==='index');
+  const us  = rows.filter(r=>r.kind==='us')
+                  .sort((a,b)=>(b.pct==null?-1e9:b.pct)-(a.pct==null?-1e9:a.pct));
+  document.getElementById('w-idx').innerHTML = idx.map(tr).join('') || '<tr><td colspan="6" class="empty">データなし</td></tr>';
+  document.getElementById('w-us').innerHTML  = us.map(tr).join('')  || '<tr><td colspan="6" class="empty">データなし</td></tr>';
+  const d = rows.length ? rows.map(r=>r.date).sort().slice(-1)[0] : null;
+  document.getElementById('w-note').textContent = d ? `最新 ${d}（${rows.length}銘柄）` : '';
 }
 
 // ===== ウォッチ =====

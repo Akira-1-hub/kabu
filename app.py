@@ -417,6 +417,63 @@ def short_page():
                            info=db.short_data_range())
 
 
+world_state = {'running': False, 'status': '', 'finished': None}
+
+
+def _world_rows():
+    """指数・米国株の一覧（表示名などのメタを付けて返す）"""
+    import fetch_world
+    latest = db.world_latest()
+    out = []
+    for sym, name, kind, unit in fetch_world.SYMBOLS:
+        d = latest.get(sym)
+        if not d:
+            continue
+        out.append({
+            'symbol': sym, 'name': name, 'kind': kind, 'unit': unit,
+            'date': d['date'], 'close': d['close'],
+            'change': d['change'], 'pct': d['pct'], 'prev_close': d['prev_close'],
+        })
+    return out
+
+
+@app.route('/world')
+def world_page():
+    rows = _world_rows()
+    return render_template('world.html',
+                           idx=[r for r in rows if r['kind'] == 'index'],
+                           us=sorted([r for r in rows if r['kind'] == 'us'],
+                                     key=lambda x: (x['pct'] is None, -(x['pct'] or 0))),
+                           info=db.world_range())
+
+
+@app.route('/api/world/update', methods=['POST'])
+def api_world_update():
+    if world_state['running']:
+        return jsonify({'ok': False, 'msg': '取得中です'})
+
+    def run():
+        import fetch_world
+        world_state.update({'running': True, 'status': '取得中...'})
+        try:
+            n = fetch_world.fetch_world(period='1mo', log=lambda m: None)
+            world_state['status'] = f'{n}件を更新しました'
+        except Exception as e:
+            world_state['status'] = f'エラー: {e}'
+        finally:
+            world_state['running'] = False
+            world_state['finished'] = datetime.now().strftime('%m/%d %H:%M')
+
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/world/status')
+def api_world_status():
+    return jsonify({'running': world_state['running'], 'status': world_state['status'],
+                    'finished': world_state['finished'], **db.world_range()})
+
+
 @app.route('/heatmap')
 def heatmap_page():
     return render_template('heatmap.html', rows=db.heatmap_rows())

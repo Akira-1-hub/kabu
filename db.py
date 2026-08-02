@@ -127,6 +127,18 @@ CREATE TABLE IF NOT EXISTS fundamentals (
     op_margin       REAL         -- 営業利益率%
 );
 
+-- 指数・海外株の日々の値（毎日積み上げ）
+CREATE TABLE IF NOT EXISTS world_prices (
+    symbol      TEXT NOT NULL,     -- yfinanceのシンボル（^N225 / AAPL など）
+    date        TEXT NOT NULL,     -- 現地の取引日 YYYY-MM-DD
+    close       REAL,
+    change      REAL,
+    change_pct  REAL,
+    volume      INTEGER,
+    PRIMARY KEY (symbol, date)
+);
+CREATE INDEX IF NOT EXISTS idx_world_date ON world_prices(date);
+
 -- スキャン実行ログ
 CREATE TABLE IF NOT EXISTS scan_runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1292,6 +1304,57 @@ def get_fundamentals(code):
     r = conn.execute('SELECT * FROM fundamentals WHERE code=?', (code,)).fetchone()
     conn.close()
     return dict(r) if r else None
+
+
+def bulk_save_world(rows):
+    """world_prices へ一括保存（symbol,date,close,change,change_pct,volume）"""
+    conn = get_conn()
+    conn.executemany(
+        'INSERT OR REPLACE INTO world_prices '
+        '(symbol,date,close,change,change_pct,volume) VALUES (?,?,?,?,?,?)', rows)
+    conn.commit()
+    conn.close()
+
+
+def world_latest():
+    """各シンボルの最新値と前回値。返り値 {symbol: {...}}"""
+    conn = get_conn()
+    rows = conn.execute("""
+        WITH ranked AS (
+            SELECT symbol, date, close, change, change_pct, volume,
+                   ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) rn
+            FROM world_prices
+        )
+        SELECT symbol,
+               MAX(CASE WHEN rn=1 THEN date END)       AS date,
+               MAX(CASE WHEN rn=1 THEN close END)      AS close,
+               MAX(CASE WHEN rn=1 THEN change END)     AS change,
+               MAX(CASE WHEN rn=1 THEN change_pct END) AS pct,
+               MAX(CASE WHEN rn=2 THEN close END)      AS prev_close
+        FROM ranked WHERE rn <= 2 GROUP BY symbol
+    """).fetchall()
+    conn.close()
+    return {r['symbol']: dict(r) for r in rows}
+
+
+def world_series(symbol, days=90):
+    """1シンボルの推移（古い順）"""
+    conn = get_conn()
+    rows = conn.execute(
+        'SELECT date, close, change_pct FROM world_prices WHERE symbol=? '
+        'ORDER BY date DESC LIMIT ?', (symbol, days)).fetchall()
+    conn.close()
+    return [dict(r) for r in reversed(rows)]
+
+
+def world_range():
+    """world_prices の件数と期間"""
+    conn = get_conn()
+    r = conn.execute(
+        'SELECT COUNT(*) n, MIN(date) min_d, MAX(date) max_d, '
+        'COUNT(DISTINCT symbol) syms FROM world_prices').fetchone()
+    conn.close()
+    return dict(r) if r else {}
 
 
 def heatmap_rows():

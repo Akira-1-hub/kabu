@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}指数・米国株 - 投資DB{% endblock %}
+{% block content %}
+
+{% macro num(v, unit) %}{% if v is none %}-{% elif v >= 1000 %}{{ '{:,.0f}'.format(v) }}{% elif v >= 100 %}{{ '{:,.2f}'.format(v) }}{% else %}{{ '{:,.2f}'.format(v) }}{% endif %}{% endmacro %}
+
+{% macro row_table(title, rows, note) %}
+<div class="card" style="margin-bottom:14px">
+  <h2>{{ title }}<span class="muted">{{ note }}</span></h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th class="txt-left">銘柄名</th><th class="txt-left hide-sp">シンボル</th>
+        <th>現在値</th><th>前日比</th><th>変化率</th><th class="hide-sp">日付</th>
+      </tr></thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td class="txt-left"><b>{{ r.name }}</b></td>
+          <td class="txt-left muted hide-sp" style="font-size:11px">{{ r.symbol }}</td>
+          <td class="{{ 'rise' if (r.pct or 0)>0 else ('fall' if (r.pct or 0)<0 else '') }}">
+            <b style="font-size:14px">{{ num(r.close, r.unit) }}</b></td>
+          <td class="{{ 'rise' if (r.change or 0)>0 else ('fall' if (r.change or 0)<0 else 'muted') }}">
+            {{ '{:+,.2f}'.format(r.change) if r.change is not none else '-' }}</td>
+          <td class="{{ 'rise' if (r.pct or 0)>0 else ('fall' if (r.pct or 0)<0 else 'muted') }}">
+            <b>{{ '{:+.2f}%'.format(r.pct) if r.pct is not none else '-' }}</b></td>
+          <td class="hide-sp muted">{{ r.date }}</td>
+        </tr>
+        {% else %}<tr><td colspan="6" class="empty">「最新を取得」を押してください</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endmacro %}
+
+<div class="page-title">🌏 指数・米国株
+  <span class="muted" style="font-size:13px;font-weight:400">
+    {% if info.max_d %}最新 {{ info.max_d }}（{{ info.syms }}銘柄・累計{{ '{:,}'.format(info.n) }}件）{% endif %}
+  </span>
+  <span class="spacer" style="flex:1"></span>
+  <button class="btn btn-sm btn-accent" id="btn-world" onclick="updateWorld()">⬇ 最新を取得</button>
+</div>
+<div class="status-line" id="world-status"></div>
+
+{{ row_table('📊 指数・為替・商品', idx, '日本／米国') }}
+{{ row_table('🇺🇸 米国株（半導体・ハイテク）', us, '変化率の高い順') }}
+
+<div class="muted" style="font-size:11px;margin-top:8px">
+  ※出典 Yahoo Finance。米国市場は日本時間の早朝に確定するため、日付は現地取引日です。ドル円・ビットコインは24時間動くので当日値が入ります。
+</div>
+
+{% endblock %}
+{% block script %}
+<script>
+async function updateWorld(){
+  const r = await (await fetch('/api/world/update',{method:'POST'})).json();
+  if(!r.ok){ alert(r.msg); return; }
+  document.getElementById('btn-world').disabled = true;
+  document.getElementById('world-status').textContent = '取得中...';
+  setTimeout(pollWorld, 800);
+}
+async function pollWorld(){
+  const s = await (await fetch('/api/world/status')).json();
+  const btn = document.getElementById('btn-world');
+  if(s.running){ btn.textContent='⏳ 取得中'; setTimeout(pollWorld, 1500); return; }
+  btn.disabled=false; btn.textContent='⬇ 最新を取得';
+  document.getElementById('world-status').textContent =
+    s.status ? s.status + (s.finished?`（${s.finished}）`:'') : '';
+  if(s.status && s.status.includes('更新')) setTimeout(()=>location.reload(), 700);
+}
+</script>
+{% endblock %}
