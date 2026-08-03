@@ -8,11 +8,25 @@
 
 {% macro rank_table(title, rows, kind) %}
 <div class="card">
-  <h2>{{ title }}</h2>
+  <h2>{{ title }}
+    {% if kind=='surge' %}
+    <span style="display:flex;gap:5px;align-items:center;font-weight:400">
+      <span class="muted" style="font-size:11px">上昇率</span>
+      <input type="number" id="smin" value="{{ smin }}" step="0.5" placeholder="以上"
+             style="width:62px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:3px 6px;font-size:12px">
+      <span class="muted">〜</span>
+      <input type="number" id="smax" value="{{ smax }}" step="0.5" placeholder="以下"
+             style="width:62px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:3px 6px;font-size:12px">
+      <span class="muted" style="font-size:11px">%</span>
+      <button class="btn btn-sm {{ 'btn-accent' if (smin or smax) else 'btn-ghost' }}" onclick="applySurge()">絞込</button>
+      {% if smin or smax %}<a class="btn btn-sm btn-ghost" href="/rankings">解除</a>{% endif %}
+    </span>
+    {% endif %}
+  </h2>
   <div class="table-wrap" style="max-height:480px;overflow-y:auto">
     <table>
       <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th>
-        {% if kind=='surge' %}<th>倍率</th><th class="hide-sp">出来高</th>
+        {% if kind=='surge' %}<th>倍率</th><th>前日比%</th><th class="hide-sp">出来高</th>
         {% elif kind=='hit' %}<th>回数</th><th class="hide-sp">最終</th>
         {% else %}<th>前日比%</th><th class="hide-sp">終値</th>{% endif %}
         <th title="全機関合算の空売り残高割合">空売り%</th>
@@ -25,6 +39,8 @@
           <td class="txt-left"><a href="/stock/{{ r.code }}" style="color:inherit">{{ r.name or '-' }}</a></td>
           {% if kind=='surge' %}
             <td><span class="badge accent">{{ '{:.1f}x'.format(r.volume_ratio) }}</span></td>
+            <td class="{{ 'rise' if (r.change_pct or 0)>0 else ('fall' if (r.change_pct or 0)<0 else 'muted') }}">
+              {{ '{:+.2f}%'.format(r.change_pct) if r.change_pct is not none else '-' }}</td>
             <td class="hide-sp">{{ '{:,.0f}'.format(r.volume) if r.volume else '-' }}</td>
           {% elif kind=='hit' %}
             <td><span class="badge accent">{{ r.hit_count }}回</span></td>
@@ -37,7 +53,9 @@
             {{ '{:.2f}%'.format(r.short_ratio) if r.short_ratio else '-' }}</td>
           <td class="hide-sp">{{ cap(r.market_cap_oku) }}</td>
         </tr>
-        {% else %}<tr><td colspan="6" class="empty">スキャンするとデータが溜まります</td></tr>{% endfor %}
+        {% else %}<tr><td colspan="7" class="empty">
+          {% if kind=='surge' and (smin or smax) %}この上昇率の範囲に該当する銘柄はありません{% else %}スキャンするとデータが溜まります{% endif %}
+        </td></tr>{% endfor %}
       </tbody>
     </table>
   </div>
@@ -50,5 +68,29 @@
   {{ rank_table('🔥 出来高急増', by_surge, 'surge') }}
   {{ rank_table('🔁 継続出現（30日）', hit_ranking, 'hit') }}
 </div>
+
+{% if smin or smax %}
+<div class="muted" style="font-size:11px;margin-top:8px">
+  ※出来高急増は「上昇率{{ smin ~ '%以上' if smin }}{{ ' かつ ' if smin and smax }}{{ smax ~ '%以下' if smax }}」で絞り込み中（{{ by_surge|length }}件）。
+</div>
+{% endif %}
+
+{% endblock %}
+{% block script %}
+<script>
+function applySurge(){
+  const lo = document.getElementById('smin').value.trim();
+  const hi = document.getElementById('smax').value.trim();
+  const q = new URLSearchParams();
+  if(lo !== '') q.set('smin', lo);
+  if(hi !== '') q.set('smax', hi);
+  location.href = '/rankings' + (q.toString() ? '?' + q : '');
+}
+['smin','smax'].forEach(id=>{
+  document.getElementById(id).addEventListener('keydown', e=>{
+    if(e.key === 'Enter') applySurge();
+  });
+});
+</script>
 
 {% endblock %}

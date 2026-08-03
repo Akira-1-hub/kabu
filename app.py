@@ -487,8 +487,20 @@ def heatmap_page():
 @app.route('/rankings')
 def rankings():
     prices = db.get_latest_prices()
-    by_surge = sorted([p for p in prices if p.get('volume_ratio')],
-                      key=lambda x: x['volume_ratio'], reverse=True)[:50]
+
+    # 出来高急増の絞り込み：上昇率の下限/上限（急騰済みを外す・下落中の急増を拾う等）
+    def _f(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+    smin, smax = _f(request.args.get('smin')), _f(request.args.get('smax'))
+    surge_src = [p for p in prices if p.get('volume_ratio')]
+    if smin is not None or smax is not None:
+        surge_src = [p for p in surge_src if p.get('change_pct') is not None
+                     and (smin is None or p['change_pct'] >= smin)
+                     and (smax is None or p['change_pct'] <= smax)]
+    by_surge = sorted(surge_src, key=lambda x: x['volume_ratio'], reverse=True)[:50]
     by_rise = sorted([p for p in prices if p.get('change_pct') is not None],
                      key=lambda x: x['change_pct'], reverse=True)[:50]
     by_fall = sorted([p for p in prices if p.get('change_pct') is not None],
@@ -501,7 +513,9 @@ def rankings():
     _add_cap_short(by_surge, by_rise, by_fall, hits)
     return render_template('rankings.html',
                            by_surge=by_surge, by_rise=by_rise, by_fall=by_fall,
-                           hit_ranking=hits)
+                           hit_ranking=hits,
+                           smin=request.args.get('smin', ''),
+                           smax=request.args.get('smax', ''))
 
 
 def _add_cap_short(*row_lists):

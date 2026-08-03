@@ -171,8 +171,18 @@
       <div class="card"><h2>📉 値下がり率</h2><div class="table-wrap" style="max-height:480px;overflow-y:auto"><table>
         <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>前日比%</th><th class="hide-sp">終値</th><th title="全機関合算の空売り残高割合">空売り%</th><th class="hide-sp">時価総額</th></tr></thead>
         <tbody id="r-fall"></tbody></table></div></div>
-      <div class="card"><h2>🔥 出来高急増</h2><div class="table-wrap" style="max-height:480px;overflow-y:auto"><table>
-        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>倍率</th><th class="hide-sp">出来高</th><th title="全機関合算の空売り残高割合">空売り%</th><th class="hide-sp">時価総額</th></tr></thead>
+      <div class="card"><h2>🔥 出来高急増
+        <span style="display:flex;gap:5px;align-items:center;font-weight:400">
+          <span class="muted" style="font-size:11px">上昇率</span>
+          <input type="number" id="smin" step="0.5" placeholder="以上" oninput="renderRankings()"
+                 style="width:58px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:3px 6px;font-size:12px">
+          <span class="muted">〜</span>
+          <input type="number" id="smax" step="0.5" placeholder="以下" oninput="renderRankings()"
+                 style="width:58px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:3px 6px;font-size:12px">
+          <span class="muted" style="font-size:11px">%</span>
+        </span>
+      </h2><div class="table-wrap" style="max-height:480px;overflow-y:auto"><table>
+        <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>倍率</th><th>前日比%</th><th class="hide-sp">出来高</th><th title="全機関合算の空売り残高割合">空売り%</th><th class="hide-sp">時価総額</th></tr></thead>
         <tbody id="r-surge"></tbody></table></div></div>
       <div class="card"><h2>🔁 継続出現（30日）</h2><div class="table-wrap" style="max-height:480px;overflow-y:auto"><table>
         <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>回数</th><th class="hide-sp">最終</th><th title="全機関合算の空売り残高割合">空売り%</th><th class="hide-sp">時価総額</th></tr></thead>
@@ -546,7 +556,9 @@ function rrow(d,kind){
   const tail = srCell(d.code) + `<td class="hide-sp">${capOf(d.code)}</td>`;
   if(kind==='surge') return `<tr><td class="txt-left code">${lk(d.code,d.code)}</td>
     <td class="txt-left"><a href="detail.html?code=${d.code}" style="color:inherit">${d.name||'-'}</a></td>
-    <td><span class="badge accent">${(d.ratio||0).toFixed(1)}x</span></td><td class="hide-sp">${fmtNum(d.vol)}</td>${tail}</tr>`;
+    <td><span class="badge accent">${(d.ratio||0).toFixed(1)}x</span></td>
+    <td class="${pctClass(d.pct)}">${fmtPct(d.pct)}</td>
+    <td class="hide-sp">${fmtNum(d.vol)}</td>${tail}</tr>`;
   return `<tr><td class="txt-left code">${lk(d.code,d.code)}</td>
     <td class="txt-left"><a href="detail.html?code=${d.code}" style="color:inherit">${d.name||'-'}</a></td>
     <td class="${pctClass(d.pct)}">${fmtPct(d.pct)}</td><td class="hide-sp">${d.close!=null?Math.round(d.close).toLocaleString():'-'}</td>${tail}</tr>`;
@@ -556,10 +568,18 @@ function renderRankings(){
   const withPct=dPrices.filter(d=>d.pct!=null);
   const rise=[...withPct].sort((a,b)=>b.pct-a.pct).slice(0,30);
   const fall=[...withPct].sort((a,b)=>a.pct-b.pct).slice(0,30);
-  const surge=dPrices.filter(d=>d.ratio!=null).sort((a,b)=>b.ratio-a.ratio).slice(0,30);
+  // 出来高急増は上昇率で絞り込める（○%以上／○%以下）
+  const sLo=parseFloat((document.getElementById('smin')||{}).value);
+  const sHi=parseFloat((document.getElementById('smax')||{}).value);
+  let surgeSrc=dPrices.filter(d=>d.ratio!=null);
+  if(!isNaN(sLo)||!isNaN(sHi)){
+    surgeSrc=surgeSrc.filter(d=>d.pct!=null
+      && (isNaN(sLo)||d.pct>=sLo) && (isNaN(sHi)||d.pct<=sHi));
+  }
+  const surge=surgeSrc.sort((a,b)=>b.ratio-a.ratio).slice(0,30);
   document.getElementById('r-rise').innerHTML = rise.map(d=>rrow(d,'rise')).join('') || '<tr><td colspan="6" class="empty">なし</td></tr>';
   document.getElementById('r-fall').innerHTML = fall.map(d=>rrow(d,'fall')).join('') || '<tr><td colspan="6" class="empty">なし</td></tr>';
-  document.getElementById('r-surge').innerHTML = surge.map(d=>rrow(d,'surge')).join('') || '<tr><td colspan="6" class="empty">なし</td></tr>';
+  document.getElementById('r-surge').innerHTML = surge.map(d=>rrow(d,'surge')).join('') || '<tr><td colspan="7" class="empty">この上昇率の範囲に該当する銘柄はありません</td></tr>';
   document.getElementById('r-hit').innerHTML = (D.hits30||[]).slice(0,30).map(r=>`<tr>
     <td class="txt-left code">${lk(r.code,r.code)}</td>
     <td class="txt-left"><a href="detail.html?code=${r.code}" style="color:inherit">${r.name||'-'}</a></td>
