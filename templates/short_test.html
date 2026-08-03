@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+{% block title %}空売り（テスト用） - 投資DB{% endblock %}
+{% block content %}
+
+<!-- 本番と誤認しないための明示 -->
+<div style="background:linear-gradient(90deg,rgba(255,159,67,.22),transparent);
+            border:1px solid #7a4a20;border-left:4px solid #ff9f43;
+            border-radius:8px;padding:9px 14px;margin-bottom:14px">
+  <b style="color:#ffb870">🧪 テスト用（検証・学習専用）</b>
+  <span class="muted" style="font-size:12px;margin-left:8px">
+    本番の「空売り」ランキングとは別システムです。ここの学習結果が本番へ自動反映されることはありません。
+  </span>
+</div>
+
+<div class="page-title">🧪 空売り（テスト用）
+  <span class="muted" style="font-size:13px;font-weight:400">
+    モデル <b style="color:var(--accent2)">{{ model.version }}</b>
+    ／ 予測 {{ '{:,}'.format(stats.n_pred) }}件・{{ stats.n_days }}日
+    ／ 結果 {{ '{:,}'.format(stats.n_out) }}件
+  </span>
+</div>
+
+<div class="scan-panel" style="gap:8px">
+  {% for k,l in [('latest','最新ランキング'),('past','過去ランキング'),
+                 ('result','予測結果'),('learn','学習状況'),('models','重み履歴')] %}
+  <a class="btn btn-sm {{ 'btn-accent' if tab==k else 'btn-ghost' }}"
+     href="/short-test?tab={{ k }}{{ '&date='+target if target and k in ('latest','past') }}">{{ l }}</a>
+  {% endfor %}
+  <span class="spacer" style="flex:1"></span>
+  {% if tab in ('latest','past') and days %}
+  <label class="muted" style="font-size:12px">日付</label>
+  <select onchange="location.href='/short-test?tab={{ tab }}&date='+this.value"
+          style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 8px;font-size:12px">
+    {% for d in days %}<option value="{{ d }}" {{ 'selected' if d==target }}>{{ d }}</option>{% endfor %}
+  </select>
+  {% endif %}
+</div>
+
+{% macro pct(v) %}{% if v is none %}<span class="muted">-</span>{% else %}<span class="{{ 'rise' if v>0 else ('fall' if v<0 else 'muted') }}">{{ '{:+.2f}%'.format(v) }}</span>{% endif %}{% endmacro %}
+
+{# ============ 最新／過去ランキング ============ #}
+{% if tab in ('latest','past') %}
+<div class="card">
+  <h2>🧪 テスト用ランキング {{ target or '' }}
+    <span class="muted">
+      {% if rows %}使用データ最終日 {{ rows[0].data_date }}／モデル {{ rows[0].version }}{% endif %}
+    </span>
+  </h2>
+  <div class="table-wrap" style="max-height:640px;overflow-y:auto">
+    <table>
+      <thead><tr>
+        <th>順位</th><th class="txt-left">コード</th><th class="txt-left">銘柄名</th>
+        <th>スコア</th><th title="データの揃い具合">信頼度</th>
+        <th>判定時株価</th><th>残高%</th>
+        <th title="増加量と減少量の絶対値合計">回転度</th>
+        <th title="増やす機関と減らす機関の混在度">交錯度</th>
+        <th class="hide-sp">期間騰落</th><th class="hide-sp">買戻日数</th>
+        <th class="hide-sp" title="予測後5営業日以内の最大上昇率">結果(最大5日)</th>
+        <th class="txt-left hide-sp">スコアの内訳（上位3項目）</th>
+      </tr></thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td><b>{{ r.rank }}</b></td>
+          <td class="txt-left code"><a href="/stock/{{ r.code }}">{{ r.code }}</a></td>
+          <td class="txt-left">{{ r.name or '-' }}</td>
+          <td><b class="both" style="font-size:14px">{{ '{:.2f}'.format(r.score) }}</b></td>
+          <td class="{{ 'muted' if (r.confidence or 0) >= 0.9 else 'fall' }}">{{ '{:.2f}'.format(r.confidence or 0) }}</td>
+          <td>{{ '{:,.0f}'.format(r.close) if r.close else '-' }}</td>
+          <td><b>{{ '{:.1f}%'.format(r.short_ratio) if r.short_ratio else '-' }}</b></td>
+          <td>{{ '{:.2f}'.format(r.feats.get('turnover', 0)) }}</td>
+          <td>{{ '{:.2f}'.format(r.feats.get('crossing', 0)) }}</td>
+          <td class="hide-sp">{{ pct(r.feats.get('price_gain')) }}</td>
+          <td class="hide-sp">{{ '{:.1f}日'.format(r.feats.get('dtc', 0)) }}</td>
+          <td class="hide-sp">{{ pct(r.mx5) }}</td>
+          <td class="txt-left hide-sp muted" style="font-size:11px;white-space:normal;max-width:280px">
+            {% for k, v in (r.contrib.items()|list|sort(attribute='1', reverse=True))[:3] %}{{ k }}={{ v }}{{ ' / ' if not loop.last }}{% endfor %}
+          </td>
+        </tr>
+        {% else %}<tr><td colspan="13" class="empty">まだ予測がありません（test_backfill.py を実行してください）</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="muted" style="font-size:11px;padding:6px 12px">
+    ※各予測日は「その日に実際に公表されていた空売り残高」だけで計算しています（未来情報は使いません）。
+    結果欄は評価期間を迎えた分のみ表示。
+  </div>
+</div>
+{% endif %}
+
+{# ============ 予測結果 ============ #}
+{% if tab == 'result' %}
+<div class="card"><h2>📊 予測結果の集計<span class="muted" id="ev-note"></span></h2>
+  <div class="body"><div id="ev-body" class="muted">集計中...</div></div>
+</div>
+{% endif %}
+
+{# ============ 学習状況 ============ #}
+{% if tab == 'learn' %}
+<div class="card" style="margin-bottom:14px">
+  <h2>🎓 学習状況
+    <button class="btn btn-sm btn-accent" id="btn-learn" onclick="runLearn()">学習を実行</button>
+  </h2>
+  <div class="body">
+    <div class="kv" style="display:flex;gap:10px 26px;flex-wrap:wrap">
+      <div><span class="muted">現在のモデル</span> <b>{{ model.version }}</b></div>
+      <div><span class="muted">由来</span> <b>{{ '自動学習' if model.source=='auto' else '手動設定' }}</b></div>
+      <div><span class="muted">学習件数</span> <b>{{ '{:,}'.format(model.n_train or 0) }}</b></div>
+      <div><span class="muted">蓄積データ</span> <b>{{ '{:,}'.format(stats.n_out) }}</b> 件の結果</div>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:8px">{{ model.reason }}</div>
+    <pre id="learn-log" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;
+         padding:10px;margin-top:10px;font-size:11.5px;max-height:420px;overflow:auto;
+         white-space:pre-wrap;display:none"></pre>
+  </div>
+</div>
+<div class="card">
+  <h2>⚖ 現在の重み<span class="muted">正規化した特徴量にこの重みを掛けて合計＝スコア</span></h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th class="txt-left">評価項目</th><th>重み</th><th class="txt-left">意味</th></tr></thead>
+    <tbody>
+      {% set desc = {
+        'short_ratio':'現在の空売り残高割合（踏ませる玉の量）',
+        'short_delta':'期間中の残高増減',
+        'price_gain':'期間騰落率',
+        'up_days':'続伸日数',
+        'vol_ratio':'出来高倍率',
+        'new_inst':'新規参入した機関数',
+        'new_ratio':'新規参入機関の残高合計',
+        'dtc':'買い戻し日数（流動性に対する厚み）',
+        'turnover':'空売り回転度（純増減では見えない移動量）',
+        'crossing':'機関交錯度（増やす機関と減らす機関の混在）',
+        'price_resil':'価格耐性（空売り増加でも下がらない強さ）',
+        'absorption':'売り圧吸収度（新規売りの吸収され具合）',
+        'fuel_left':'残存空売り燃料（買い戻し済みを除いた残り）',
+        'cover_amt':'買い戻し量' } %}
+      {% for k, v in model.weights.items()|sort(attribute='1', reverse=True) %}
+      <tr><td class="txt-left"><b>{{ k }}</b></td>
+        <td><b class="{{ 'both' if v>0 else 'muted' }}">{{ '{:.2f}'.format(v) }}</b></td>
+        <td class="txt-left muted">{{ desc.get(k, '') }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endif %}
+
+{# ============ 重み履歴 ============ #}
+{% if tab == 'models' %}
+<div class="card">
+  <h2>🗂 重みバージョン履歴<span class="muted">上書きせず全て保存</span></h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th class="txt-left">バージョン</th><th class="txt-left">作成</th>
+      <th class="txt-left">適用期間</th><th>学習件数</th><th class="txt-left">由来</th>
+      <th class="txt-left">理由・結果</th><th>現行</th></tr></thead>
+    <tbody>
+      {% for m in models %}
+      <tr>
+        <td class="txt-left"><b>{{ m.version }}</b></td>
+        <td class="txt-left muted" style="font-size:11px">{{ m.created_at }}</td>
+        <td class="txt-left muted" style="font-size:11px">{{ m.applied_from }} 〜 {{ m.applied_to or '現在' }}</td>
+        <td>{{ '{:,}'.format(m.n_train or 0) }}</td>
+        <td class="txt-left">{{ '自動' if m.source=='auto' else '手動' }}</td>
+        <td class="txt-left muted" style="font-size:11px;white-space:normal;max-width:420px">{{ m.reason }}</td>
+        <td>{% if m.is_current %}<span class="badge accent">使用中</span>{% endif %}</td>
+      </tr>
+      {% else %}<tr><td colspan="7" class="empty">履歴がありません</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</div>
+<div class="muted" style="font-size:11px;margin-top:8px">
+  ※テスト用で良い結果が出ても本番へは自動反映しません。本番へ入れる場合は内容を確認のうえ手動で行います。
+</div>
+{% endif %}
+
+{% endblock %}
+{% block script %}
+<script>
+const TAB = '{{ tab }}';
+
+if (TAB === 'result') {
+  fetch('/api/test/summary').then(r=>r.json()).then(d=>{
+    const m = d.metrics || {};
+    if(!m.n_pred){ document.getElementById('ev-body').textContent='結果がまだありません'; return; }
+    document.getElementById('ev-note').textContent =
+      `${m.n_days}日 / 予測${m.n_pred.toLocaleString()}件`;
+    const f = v => v==null ? '-' : (v>=0?'+':'')+v.toFixed(2)+'%';
+    const cls = v => v==null?'muted':(v>0?'rise':'fall');
+    const row = (N)=>`<tr><td><b>上位${N}</b></td>
+      <td class="${cls(m['top'+N+'_r5'])}">${f(m['top'+N+'_r5'])}</td>
+      <td class="${cls(m['top'+N+'_r10'])}">${f(m['top'+N+'_r10'])}</td>
+      <td class="${cls(m['top'+N+'_r20'])}">${f(m['top'+N+'_r20'])}</td>
+      <td class="${cls(m['top'+N+'_mx5'])}"><b>${f(m['top'+N+'_mx5'])}</b></td>
+      <td class="${cls(m['top'+N+'_mx10'])}">${f(m['top'+N+'_mx10'])}</td>
+      <td class="${cls(m['top'+N+'_ex5'])}">${f(m['top'+N+'_ex5'])}</td>
+      <td>${m['top'+N+'_win']}%</td><td>${m['top'+N+'_hit5']}%</td>
+      <td class="muted">${(m['top'+N+'_n']||0).toLocaleString()}</td></tr>`;
+    document.getElementById('ev-body').innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th class="txt-left">グループ</th><th>5日</th><th>10日</th><th>20日</th>
+          <th title="5営業日以内の最大上昇率">最大5日</th><th>最大10日</th>
+          <th title="TOPIXに対する超過">超過5日</th><th>上昇率</th>
+          <th title="5日以内に+10%到達">+10%到達</th><th>件数</th></tr></thead>
+        <tbody>${row(5)}${row(10)}${row(20)}</tbody></table></div>
+      <div style="display:flex;gap:10px 26px;flex-wrap:wrap;margin-top:12px;font-size:12.5px">
+        <div><span class="muted">順位相関(最大5日)</span> <b>${m.ic_mx5 ?? '-'}</b></div>
+        <div><span class="muted">上位10と50位以下の差</span> <b>${f(m.spread_mx5)}</b></div>
+        <div><span class="muted">月別の勝率</span> <b>${m.monthly_win ?? '-'}%</b></div>
+        <div><span class="muted">月別のばらつき</span> <b>${m.monthly_std ?? '-'}</b></div>
+        <div><span class="muted">最悪の月</span> <b class="${cls(m.worst_month)}">${f(m.worst_month)}</b></div>
+        <div><span class="muted">上位の銘柄集中</span> <b>${m.top_code_share ?? '-'}%</b></div>
+        <div><span class="muted">業種集中</span> <b>${m.top_sector_share ?? '-'}%</b></div>
+      </div>
+      <div class="muted" style="font-size:11px;margin-top:8px">
+        ※踏み上げ候補は急騰後に戻すことがあるため、終値ベースだけでなく「期間内の最大上昇率」を重視しています。
+      </div>`;
+  });
+}
+
+async function runLearn(){
+  const r = await (await fetch('/api/test/learn',{method:'POST'})).json();
+  if(!r.ok){ alert(r.msg); return; }
+  document.getElementById('btn-learn').disabled = true;
+  document.getElementById('learn-log').style.display='block';
+  pollLearn();
+}
+async function pollLearn(){
+  const s = await (await fetch('/api/test/status')).json();
+  const el = document.getElementById('learn-log');
+  if(el) el.textContent = (s.log||[]).join('\n') + (s.status ? '\n\n' + s.status : '');
+  const b = document.getElementById('btn-learn');
+  if(s.running){ b.textContent='⏳ 学習中'; setTimeout(pollLearn, 1500); }
+  else { b.disabled=false; b.textContent='学習を実行'; }
+}
+if (TAB === 'learn') pollLearn();
+</script>
+{% endblock %}

@@ -479,6 +479,92 @@ def api_world_status():
                     'finished': world_state['finished'], **db.world_range()})
 
 
+# ============================================================
+# 空売り（テスト用）  ※本番ランキングとは完全に分離。学習結果は本番に反映しない
+# ============================================================
+test_state = {'running': False, 'status': '', 'log': [], 'finished': None}
+
+
+@app.route('/short-test')
+def short_test_page():
+    import test_model as tm
+    import json as _json
+    tab = request.args.get('tab', 'latest')
+    date = request.args.get('date')
+    model = tm.current_model()
+
+    conn = db.get_conn()
+    days = [r['date'] for r in conn.execute(
+        'SELECT DISTINCT date FROM test_predictions ORDER BY date DESC LIMIT 400')]
+    target = date if (date and date in days) else (days[0] if days else None)
+
+    rows = []
+    if target:
+        rows = [dict(r) for r in conn.execute("""
+            SELECT p.rank,p.code,p.score,p.contrib,p.confidence,p.version,
+                   f.close,f.sector,f.market_cap,f.short_ratio,f.feats,f.data_date,
+                   s.name,
+                   o.r5,o.mx5,o.r10,o.mx10,o.ex5
+            FROM test_predictions p
+            LEFT JOIN test_features f ON f.date=p.date AND f.code=p.code
+            LEFT JOIN stocks s ON s.code=p.code
+            LEFT JOIN test_outcomes o ON o.date=p.date AND o.code=p.code
+            WHERE p.date=? ORDER BY p.rank LIMIT 50
+        """, (target,))]
+        for r in rows:
+            r['contrib'] = _json.loads(r['contrib'] or '{}')
+            r['feats'] = _json.loads(r['feats'] or '{}')
+    stats = dict(conn.execute("""
+        SELECT (SELECT COUNT(*) FROM test_features) n_feat,
+               (SELECT COUNT(DISTINCT date) FROM test_features) n_days,
+               (SELECT COUNT(*) FROM test_outcomes) n_out,
+               (SELECT COUNT(*) FROM test_predictions) n_pred
+    """).fetchone())
+    conn.close()
+
+    return render_template('short_test.html', tab=tab, model=model, days=days,
+                           target=target, rows=rows, stats=stats,
+                           models=tm.list_models())
+
+
+@app.route('/api/test/summary')
+def api_test_summary():
+    """テスト用モデルの成績と、本番ランキングとの比較"""
+    import test_eval
+    import test_model as tm
+    m = tm.current_model()
+    rows = test_eval.load_joined(m['version'])
+    return jsonify({'version': m['version'],
+                    'metrics': test_eval.evaluate(rows, main='mx5')})
+
+
+@app.route('/api/test/learn', methods=['POST'])
+def api_test_learn():
+    if test_state['running']:
+        return jsonify({'ok': False, 'msg': '実行中です'})
+
+    def run():
+        import test_learn
+        test_state.update({'running': True, 'log': [], 'status': '学習中...'})
+        try:
+            r = test_learn.run(log=lambda m: test_state['log'].append(str(m)))
+            test_state['status'] = (f'新モデル {r["version"]} を採用' if r
+                                    else '条件を満たす候補なし（現行を維持）')
+        except Exception as e:
+            test_state['status'] = f'エラー: {e}'
+        finally:
+            test_state['running'] = False
+            test_state['finished'] = datetime.now().strftime('%m/%d %H:%M')
+
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/test/status')
+def api_test_status():
+    return jsonify(test_state)
+
+
 @app.route('/heatmap')
 def heatmap_page():
     return render_template('heatmap.html', rows=db.heatmap_rows())
