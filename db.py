@@ -142,6 +142,84 @@ CREATE TABLE IF NOT EXISTS world_prices (
 );
 CREATE INDEX IF NOT EXISTS idx_world_date ON world_prices(date);
 
+-- ============================================================
+-- 空売り（テスト用）学習システム  ※本番ランキングとは完全に分離
+-- ============================================================
+-- 予測日×全銘柄の特徴量（重みを変えて再学習できるよう上位だけでなく全件残す）
+CREATE TABLE IF NOT EXISTS test_features (
+    date        TEXT NOT NULL,     -- 予測日（この日時点で見えていた情報だけを使う）
+    code        TEXT NOT NULL,
+    feats       TEXT NOT NULL,     -- {特徴量名: 生値} をJSONで保存
+    close       REAL,              -- 判定時点の株価（未調整・表示用）
+    adj_close   REAL,              -- 判定時点の調整後株価（リターン計算用）
+    volume      INTEGER,
+    market_cap  REAL,              -- 時価総額（億円・現在値の参考）
+    sector      TEXT,
+    short_ratio REAL,              -- 全機関合算の空売り残高割合
+    data_date   TEXT,              -- 使用した空売りデータの最終計算日
+    missing     INTEGER DEFAULT 0, -- 欠損があった特徴量の数
+    PRIMARY KEY (date, code)
+);
+CREATE INDEX IF NOT EXISTS idx_tf_date ON test_features(date);
+
+-- テスト用モデル（重みのバージョン管理。上書きせず積み上げる）
+CREATE TABLE IF NOT EXISTS test_models (
+    version      TEXT PRIMARY KEY, -- TEST_v001 など
+    created_at   TEXT,
+    applied_from TEXT,             -- 適用開始日
+    applied_to   TEXT,             -- 適用終了日（現行はNULL）
+    weights      TEXT NOT NULL,    -- {項目: 重み} をJSON
+    params       TEXT,             -- 閾値など
+    train_from   TEXT,
+    train_to     TEXT,
+    n_train      INTEGER,          -- 学習に使った予測件数
+    metrics      TEXT,             -- 検証成績をJSON
+    reason       TEXT,             -- 前バージョンからの変更理由／不採用理由
+    is_current   INTEGER DEFAULT 0,
+    source       TEXT              -- manual / auto
+);
+
+-- 日次のテスト用ランキング（当時の順位・スコア・寄与度をそのまま保存）
+CREATE TABLE IF NOT EXISTS test_predictions (
+    date        TEXT NOT NULL,
+    code        TEXT NOT NULL,
+    version     TEXT NOT NULL,     -- 使用したモデル
+    rank        INTEGER,
+    score       REAL,
+    contrib     TEXT,              -- {項目: 寄与度} をJSON（スコアの内訳）
+    confidence  REAL,              -- 予測信頼度
+    PRIMARY KEY (date, code, version)
+);
+CREATE INDEX IF NOT EXISTS idx_tp_date ON test_predictions(date, version);
+
+-- 予測後に実際に起きた株価結果（評価期間を迎えたら追記）
+CREATE TABLE IF NOT EXISTS test_outcomes (
+    date        TEXT NOT NULL,     -- 予測日
+    code        TEXT NOT NULL,
+    r1          REAL, r3  REAL, r5  REAL, r10 REAL, r20 REAL,   -- 各営業日後の騰落率%
+    mx5         REAL, mx10 REAL, mx20 REAL,                     -- 期間内の最大上昇率%
+    mn5         REAL, mn10 REAL, mn20 REAL,                     -- 期間内の最大下落率%
+    hit5        INTEGER, hit10 INTEGER,   -- 一定上昇率に到達したか
+    days_to_hit INTEGER,                  -- 到達までの営業日数
+    ex5         REAL, ex10 REAL, ex20 REAL,  -- 市場指数に対する超過リターン%
+    filled_at   TEXT,
+    PRIMARY KEY (date, code)
+);
+CREATE INDEX IF NOT EXISTS idx_to_date ON test_outcomes(date);
+
+-- モデル×期間の評価結果（採用・不採用の履歴も残す）
+CREATE TABLE IF NOT EXISTS test_evaluations (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    evaluated_at TEXT,
+    version     TEXT,
+    period_from TEXT,
+    period_to   TEXT,
+    kind        TEXT,              -- train / validate / holdout / live
+    metrics     TEXT,              -- 成績をJSON
+    adopted     INTEGER,           -- 採用されたか
+    note        TEXT
+);
+
 -- スキャン実行ログ
 CREATE TABLE IF NOT EXISTS scan_runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -168,6 +246,16 @@ def init_db():
             conn.execute(f'ALTER TABLE world_prices ADD COLUMN {col} REAL')
         except Exception:
             pass
+    # 分割・配当調整済み終値（リターン計算用。未調整のcloseは表示用に残す）
+    try:
+        conn.execute('ALTER TABLE daily_prices ADD COLUMN adj_close REAL')
+    except Exception:
+        pass
+    # 空売り残高の「公表日」。予測時点で見えていたかの判定に使う（過去分はNULL）
+    try:
+        conn.execute('ALTER TABLE short_selling ADD COLUMN pub_date TEXT')
+    except Exception:
+        pass
     conn.commit()
     conn.close()
 
@@ -415,12 +503,15 @@ def save_short(code, date, institution, ratio, change_ratio, shares, change_shar
 
 
 def bulk_save_short(rows):
-    """rows: list of (code,date,institution,ratio,change_ratio,shares,change_shares)"""
+    """rows: (code,date,institution,ratio,change_ratio,shares,change_shares[,pub_date])
+    pub_date=JPXが公表した日。予測時点で見えていたかの判定に使う（省略時はNULL）。
+    """
+    rows = [r if len(r) >= 8 else tuple(r) + (None,) for r in rows]
     conn = get_conn()
     conn.executemany("""
         INSERT OR REPLACE INTO short_selling
-        (code,date,institution,ratio,change_ratio,shares,change_shares)
-        VALUES(?,?,?,?,?,?,?)
+        (code,date,institution,ratio,change_ratio,shares,change_shares,pub_date)
+        VALUES(?,?,?,?,?,?,?,?)
     """, rows)
     conn.commit()
     conn.close()
@@ -547,6 +638,23 @@ def short_max_date():
 
 # 報告義務の下限（これ未満の最新報告＝クローズ済とみなす）
 SHORT_THRESHOLD = 0.5
+
+# 公表日が記録されていない過去データに適用する保守的な公表ラグ（暦日）
+# JPXは計算日の1〜2営業日後に公表するため、3暦日あれば確実に公表済みとみなせる
+SHORT_PUB_LAG_DAYS = 3
+
+
+def short_visible_asof(asof):
+    """予測日 asof 時点で「実際に見えていた」空売り残高だけに絞る条件式を返す。
+    (SQL断片, パラメータ) を返す。未来情報の混入を防ぐための唯一の判定箇所。
+      - pub_date がある行: pub_date <= asof
+      - pub_date が無い過去行: date + ラグ <= asof
+    """
+    from datetime import datetime, timedelta
+    cutoff = (datetime.strptime(asof, '%Y-%m-%d')
+              - timedelta(days=SHORT_PUB_LAG_DAYS)).strftime('%Y-%m-%d')
+    return ('((pub_date IS NOT NULL AND pub_date <= ?) OR '
+            ' (pub_date IS NULL AND date <= ?))', [asof, cutoff])
 
 
 def short_totals_asof(asof):
@@ -1312,6 +1420,67 @@ def get_fundamentals(code):
     r = conn.execute('SELECT * FROM fundamentals WHERE code=?', (code,)).fetchone()
     conn.close()
     return dict(r) if r else None
+
+
+# ============================================================
+# テスト用: 将来リターンの計算（コーポレートアクション疑い日は除外）
+# ============================================================
+# 1日でこの比率を超えて動き、かつ単純分数に近い日は分割等とみなしてリターンを無効化
+CA_DROP = 0.65          # 1日で-35%以上
+CA_FRACTIONS = (1/2, 1/3, 1/4, 1/5, 1/10, 2/3, 3/4)
+
+
+def _is_corporate_action(ratio):
+    """1日の価格比が分割・併合の痕跡か（調整漏れの安全弁）"""
+    if ratio is None or ratio <= 0:
+        return True
+    if ratio > CA_DROP and ratio < 1 / CA_DROP:
+        return False
+    return any(abs(ratio - f) < f * 0.06 for f in CA_FRACTIONS) or ratio <= 0.2
+
+
+def forward_returns(code_series, horizons=(1, 3, 5, 10, 20)):
+    """調整後株価の並び(古い順)から、各時点の将来リターンを計算する。
+    code_series: [{'date':..,'adj':..}, ...]
+    返り値: {date: {'r1':..,'r5':.., 'mx5':.., 'mn5':.., 'bad':bool}}
+    期間内にコーポレートアクション疑いが含まれる場合は bad=True にして採用しない。
+    """
+    n = len(code_series)
+    adj = [x['adj'] for x in code_series]
+    out = {}
+    # 隣接比から異常日を先に洗い出す
+    bad_step = [False] * n
+    for i in range(1, n):
+        if adj[i - 1] and adj[i]:
+            bad_step[i] = _is_corporate_action(adj[i] / adj[i - 1])
+    for i in range(n):
+        base = adj[i]
+        if not base:
+            continue
+        rec = {}
+        hi, lo = None, None      # 将来値だけで取る（一度も上回らなければ最大上昇はマイナス）
+        worst = max(horizons)
+        bad = False
+        for k in range(1, worst + 1):
+            j = i + k
+            if j >= n:
+                break
+            if bad_step[j]:
+                bad = True
+                break
+            v = adj[j]
+            if not v:
+                continue
+            hi = v if hi is None else max(hi, v)
+            lo = v if lo is None else min(lo, v)
+            if k in horizons:
+                rec[f'r{k}'] = round((v / base - 1) * 100, 3)
+            if k in (5, 10, 20):
+                rec[f'mx{k}'] = round((hi / base - 1) * 100, 3)
+                rec[f'mn{k}'] = round((lo / base - 1) * 100, 3)
+        rec['bad'] = bad
+        out[code_series[i]['date']] = rec
+    return out
 
 
 def bulk_save_world(rows):

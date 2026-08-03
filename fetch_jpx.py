@@ -163,8 +163,11 @@ def import_jpx(since_date=None, max_files=None, log=print):
             change_ratio = None
             if p['ratio'] is not None and p['prev_ratio'] is not None:
                 change_ratio = round(p['ratio'] - p['prev_ratio'], 4)
+            # pub_date=このファイルが公表された日。新しい順に処理し上書きするため、
+            # 最終的に「最も早く公表された日」が残る（＝実際に見えるようになった日）
             db_rows.append((p['code'], p['date'], p['institution'],
-                            p['ratio'], change_ratio, p['shares'], change_shares))
+                            p['ratio'], change_ratio, p['shares'], change_shares,
+                            pub_date))
             prev_map[key] = (p['date'], p['shares'])
 
         db.bulk_save_short(db_rows)
