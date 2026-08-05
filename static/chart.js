@@ -41,6 +41,11 @@ function makeStockChart(priceEl, shortEl, bars, shorts, marks, lines) {
     const cv = document.createElement('canvas');
     cv.style.width = '100%'; cv.style.height = h + 'px'; cv.style.display = 'block';
     cv.style.touchAction = 'none';
+    // 長押しで選択メニューやコールアウトが出ないようにする
+    cv.style.userSelect = 'none';
+    cv.style.webkitUserSelect = 'none';
+    cv.style.webkitTouchCallout = 'none';
+    cv.addEventListener('contextmenu', ev => ev.preventDefault());
     el.appendChild(cv);
     return cv;
   }
@@ -59,6 +64,25 @@ function makeStockChart(priceEl, shortEl, bars, shorts, marks, lines) {
   let hoverPane = null;      // 'p' or 's'
   let mouseY = 0;
   let tipX = 8, tipY = 8;    // ツールチップ位置（priceEl基準・カーソル追従）
+
+  // タッチ端末にはマウスオーバーが無いので、操作方法を最初だけ案内する
+  let hintEl = null;
+  const canTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0 ||
+    (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  if (canTouch && !localStorage.getItem('kabu_chart_hint_done')) {
+    hintEl = document.createElement('div');
+    hintEl.textContent = '長押しで詳細 → そのまま左右に動かす';
+    hintEl.style.cssText = 'position:absolute;left:6px;bottom:6px;z-index:6;' +
+      'background:rgba(20,20,40,.85);border:1px solid #2a2a4a;border-radius:6px;' +
+      'padding:4px 9px;font-size:11px;color:#aab;pointer-events:none';
+    priceEl.appendChild(hintEl);
+  }
+  function hideHint() {
+    if (!hintEl) return;
+    hintEl.remove();
+    hintEl = null;
+    try { localStorage.setItem('kabu_chart_hint_done', '1'); } catch (e) {}
+  }
 
   function dpr() { return window.devicePixelRatio || 1; }
   function fit(cv) {
@@ -328,25 +352,64 @@ function makeStockChart(priceEl, shortEl, bars, shorts, marks, lines) {
     });
     cv.addEventListener('mouseleave', () => { hover = null; hoverPane = null; draw(); });
 
-    // タッチ（パン＋ピンチ）
-    let tStart = null;
+    // タッチ（パン＋ピンチ＋長押しで詳細表示）
+    let tStart = null, pressTimer = null;
+    const PRESS_MS = 350;     // これだけ押し続けたら詳細表示に切り替える
+    const MOVE_TOL = 12;      // それまでにこれ以上動いたら通常のパン扱い
+
     // 2本指の距離（縦・斜めのピンチでも正しく測れるよう2次元で）
     const touchDist = t => Math.hypot(t[0].clientX - t[1].clientX,
                                       t[0].clientY - t[1].clientY) || 1;
 
+    // 指の位置に十字線とツールチップを合わせる
+    function scrubTo(touch, pane) {
+      const r = cv.getBoundingClientRect();
+      const { idx } = idxAtX(cv, touch.clientX);
+      hover = Math.max(a, Math.min(b, idx));
+      hoverPane = pane;
+      mouseY = touch.clientY - r.top;
+      const pr = cP.getBoundingClientRect();
+      tipX = touch.clientX - pr.left;
+      tipY = (pane === 'p') ? (touch.clientY - pr.top) : 8;
+      draw();
+    }
+    const clearPress = () => { clearTimeout(pressTimer); pressTimer = null; };
+
     cv.addEventListener('touchstart', e => {
-      if (e.touches.length === 1) tStart = { mode: 'pan', x: e.touches[0].clientX, a, b };
-      else if (e.touches.length === 2) {
+      clearPress();
+      if (e.touches.length === 1) {
+        const t = e.touches[0];
+        tStart = { mode: 'pan', x: t.clientX, y: t.clientY, a, b };
+        // 長押し判定：動かさずに押し続けたら「詳細表示（スクラブ）」に切り替え
+        pressTimer = setTimeout(() => {
+          if (!tStart) return;
+          tStart.mode = 'scrub';
+          if (navigator.vibrate) { try { navigator.vibrate(15); } catch (_) {} }
+          scrubTo(t, pane);
+          hideHint();
+        }, PRESS_MS);
+      } else if (e.touches.length === 2) {
         // 開始時の距離と表示範囲を保持し、以降は「開始比」で絶対的に拡大縮小する
         tStart = { mode: 'pinch', d0: touchDist(e.touches), a0: a, b0: b,
                    cx: (e.touches[0].clientX + e.touches[1].clientX) / 2 };
       }
     }, { passive: false });
+
     cv.addEventListener('touchmove', e => {
-      if (!tStart) return; e.preventDefault();
+      if (!tStart) return;
+      e.preventDefault();
+      if (tStart.mode === 'scrub' && e.touches.length === 1) {
+        // 長押し後：左右にスライドで十字線を移動（チャートは動かさない）
+        scrubTo(e.touches[0], pane);
+        return;
+      }
       if (tStart.mode === 'pan' && e.touches.length === 1) {
+        const t = e.touches[0];
+        // 長押し成立前に動いたらパン確定（タイマーを止める）
+        if (pressTimer && (Math.abs(t.clientX - tStart.x) > MOVE_TOL ||
+                           Math.abs(t.clientY - tStart.y) > MOVE_TOL)) clearPress();
         const r = cv.getBoundingClientRect(), plotW = r.width - PADR, n = tStart.b - tStart.a + 1;
-        const dBars = Math.round((e.touches[0].clientX - tStart.x) / (plotW / n));
+        const dBars = Math.round((t.clientX - tStart.x) / (plotW / n));
         let na = tStart.a - dBars; na = Math.max(0, Math.min(N - n, na));
         a = na; b = na + n - 1; draw();
       } else if (tStart.mode === 'pinch' && e.touches.length === 2) {
@@ -355,7 +418,13 @@ function makeStockChart(priceEl, shortEl, bars, shorts, marks, lines) {
         zoomAt(tStart.cx, cv, tStart.d0 / touchDist(e.touches));
       }
     }, { passive: false });
-    cv.addEventListener('touchend', () => { tStart = null; });
+
+    cv.addEventListener('touchend', () => {
+      clearPress();
+      // スクラブで表示した内容は指を離しても読めるように残す
+      tStart = null;
+    });
+    cv.addEventListener('touchcancel', () => { clearPress(); tStart = null; });
   }
   bind(cP, 'p');
   if (cS) bind(cS, 's');
