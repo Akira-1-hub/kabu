@@ -361,6 +361,14 @@ def get_price_history(code, limit=120):
     return [dict(r) for r in rows]
 
 
+def latest_price_date():
+    """株価データの最新取引日"""
+    conn = get_conn()
+    r = conn.execute('SELECT MAX(date) d FROM daily_prices').fetchone()
+    conn.close()
+    return r['d'] if r else None
+
+
 def get_latest_prices(codes=None):
     """各銘柄の最新株価を取得"""
     conn = get_conn()

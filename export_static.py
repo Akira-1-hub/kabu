@@ -50,6 +50,65 @@ def _world_for_site():
     return out
 
 
+def _short_test_for_site():
+    """空売り（テスト用）の公開データ。
+    重い特徴量そのものは出さず、最新ランキング・成績・モデルの説明だけを出す。
+    """
+    try:
+        import json as _json
+        import test_eval
+        import test_model as tm
+    except Exception:
+        return None
+    conn = db.get_conn()
+    latest = conn.execute(
+        'SELECT MAX(date) d FROM test_predictions').fetchone()['d']
+    if not latest:
+        conn.close()
+        return None
+    rows = []
+    for r in conn.execute("""
+        SELECT p.rank,p.code,p.score,p.contrib,p.confidence,
+               f.close,f.short_ratio,f.feats,f.data_date,s.name,
+               o.r5,o.mx5
+        FROM test_predictions p
+        LEFT JOIN test_features f ON f.date=p.date AND f.code=p.code
+        LEFT JOIN stocks s ON s.code=p.code
+        LEFT JOIN test_outcomes o ON o.date=p.date AND o.code=p.code
+        WHERE p.date=? ORDER BY p.rank LIMIT 50
+    """, (latest,)):
+        d = dict(r)
+        fe = _json.loads(d.pop('feats') or '{}')
+        co = _json.loads(d.pop('contrib') or '{}')
+        d['turnover'] = fe.get('turnover')
+        d['crossing'] = fe.get('crossing')
+        d['price_gain'] = fe.get('price_gain')
+        d['dtc'] = fe.get('dtc')
+        d['top'] = sorted(co.items(), key=lambda x: -x[1])[:3]
+        rows.append(d)
+    stats = dict(conn.execute("""
+        SELECT (SELECT COUNT(*) FROM test_predictions) n_pred,
+               (SELECT COUNT(DISTINCT date) FROM test_features) n_days,
+               (SELECT COUNT(*) FROM test_outcomes) n_out""").fetchone())
+    conn.close()
+
+    m = tm.current_model()
+    try:
+        metrics = test_eval.evaluate(test_eval.load_joined(m['version']), main='mx5')
+    except Exception:
+        metrics = {}
+    models = []
+    for mm in tm.list_models():
+        d = tm.describe(mm['version'])
+        if d:
+            models.append({k: d[k] for k in
+                           ('version', 'created_at', 'applied_from', 'applied_to',
+                            'source', 'is_current', 'reason', 'n_train',
+                            'rows', 'ic', 'text')})
+    return {'latest': latest, 'rows': rows, 'stats': stats,
+            'version': m['version'], 'metrics': metrics, 'models': models}
+
+
 def cost_slice(c):
     """compute_cost_basis の結果を公開用に間引く"""
     return {'agg': c['agg'], 'rows': c['rows'][:15], 'close': c['close']}
@@ -129,6 +188,7 @@ def build():
         'recent_tags': recent_tags,
         'flow_label': db.FLOW_LABEL,
         'world': _world_for_site(),
+        'short_test': _short_test_for_site(),
     }
     with open(os.path.join(SITE, 'data.json'), 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, separators=(',', ':'))

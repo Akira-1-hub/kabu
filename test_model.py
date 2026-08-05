@@ -136,6 +136,115 @@ def create_model(weights, source='auto', reason='', train_from=None, train_to=No
             'source': source, 'n_train': n_train}
 
 
+# 各評価項目の説明（画面と言語化で共通に使う）
+FEATURE_DESC = {
+    'short_ratio': '空売り残高の水準（踏ませる玉の多さ）',
+    'short_delta': '期間中に空売りがどれだけ増えたか',
+    'price_gain':  '期間中の株価上昇率',
+    'up_days':     '連続して上昇した日数',
+    'vol_ratio':   '出来高の増え方',
+    'new_inst':    '新しく空売りを始めた機関の数',
+    'new_ratio':   '新規参入した機関の残高の大きさ',
+    'dtc':         '買い戻しに必要な日数（流動性に対する厚み）',
+    'turnover':    '空売り回転度：増えた量と減った量の合計（純増減では見えない移動）',
+    'crossing':    '機関交錯度：増やす機関と減らす機関がどれだけ混在しているか',
+    'price_resil': '価格耐性：空売りが増えても株価が下がらない強さ',
+    'absorption':  '売り圧吸収度：新規の売りが出来高にどれだけ吸収されたか',
+    'fuel_left':   '残存燃料：買い戻し済みを除いた、まだ踏める空売りの残り',
+    'cover_amt':   '買い戻された量',
+}
+
+
+def describe(version=None):
+    """モデルの内容を日本語で説明できる形にまとめて返す。
+    画面で「このバージョンは何をしているのか」を読めるようにするためのもの。
+    """
+    models = list_models()
+    if not models:
+        return None
+    cur = next((m for m in models if m['version'] == version), models[0]) if version else models[0]
+
+    # 1つ前のバージョン（変更点の比較用）
+    older = [m for m in models if m['created_at'] < cur['created_at']]
+    prev = older[0] if older else None
+
+    w = cur['weights']
+    total = sum(v for v in w.values() if v > 0) or 1.0
+    rows = []
+    for k, v in sorted(w.items(), key=lambda x: -x[1]):
+        pv = (prev['weights'].get(k) if prev else None)
+        diff = None if pv is None else round(v - pv, 3)
+        rows.append({
+            'key': k, 'weight': v, 'share': round(v / total * 100, 1),
+            'prev': pv, 'diff': diff, 'desc': FEATURE_DESC.get(k, ''),
+        })
+
+    top = [r for r in rows if r['weight'] > 0][:3]
+    ic = (cur.get('metrics') or {}).get('ic') or {}
+    ic_sorted = sorted(ic.items(), key=lambda x: -x[1]) if ic else []
+
+    # ---- 言語化（そのまま画面に出せる文章）----
+    lines = []
+    if cur['source'] == 'manual':
+        lines.append(
+            f'このモデル（{cur["version"]}）は、学習ではなく手動で設定した出発点です。'
+            '本番ランキングの考え方をベースに、空売り回転度などの新しい評価項目を'
+            '小さめの重みで加えてあります。')
+    else:
+        lines.append(
+            f'このモデル（{cur["version"]}）は、過去の予測とその後の実際の株価を照らし合わせて'
+            f'自動で作られました。学習には {cur.get("train_from")}〜{cur.get("train_to")} の '
+            f'{cur.get("n_train") or 0:,}件を使い、そこに含まれない期間で検証しています。')
+
+    if top:
+        names = '、'.join(f'{FEATURE_DESC.get(t["key"], t["key"])}（{t["share"]}%）' for t in top)
+        lines.append(f'スコアの中で特に効かせているのは {names} です。')
+
+    if prev:
+        ups = [r for r in rows if r['diff'] and r['diff'] > 0]
+        dns = [r for r in rows if r['diff'] and r['diff'] < 0]
+        if ups or dns:
+            parts = []
+            if ups:
+                parts.append('強めた項目：' + '、'.join(
+                    f'{u["key"]}({u["prev"]}→{u["weight"]})' for u in ups[:4]))
+            if dns:
+                parts.append('弱めた項目：' + '、'.join(
+                    f'{d["key"]}({d["prev"]}→{d["weight"]})' for d in dns[:4]))
+            lines.append(f'前バージョン {prev["version"]} からの変更 … ' + ' ／ '.join(parts))
+        else:
+            lines.append(f'前バージョン {prev["version"]} から重みの変更はありません。')
+
+    if ic_sorted:
+        good = [f'{k}({v:+.3f})' for k, v in ic_sorted[:3]]
+        bad = [f'{k}({v:+.3f})' for k, v in ic_sorted[-2:] if v < 0]
+        lines.append('学習時点で将来の上昇と関係が強かったのは ' + '、'.join(good) + ' でした。'
+                     + ('関係が薄い/逆だったのは ' + '、'.join(bad) + ' です。' if bad else ''))
+
+    val = (cur.get('metrics') or {}).get('valid') or {}
+    ho = (cur.get('metrics') or {}).get('holdout') or {}
+    if val.get('main_value') is not None:
+        lines.append(
+            f'検証期間での成績は「上位10銘柄の5営業日以内の最大上昇率」が平均 '
+            f'{val["main_value"]}%'
+            + (f'、学習にも検証にも使っていない期間では {ho.get("main_value")}% でした。'
+               if ho.get('main_value') is not None else ' でした。'))
+
+    lines.append('※これはテスト用のモデルです。ここでの結果が本番の空売りランキングへ'
+                 '自動的に反映されることはありません。')
+
+    return {
+        'version': cur['version'], 'created_at': cur['created_at'],
+        'applied_from': cur['applied_from'], 'applied_to': cur['applied_to'],
+        'source': cur['source'], 'is_current': cur['is_current'],
+        'reason': cur['reason'], 'n_train': cur.get('n_train'),
+        'train_from': cur.get('train_from'), 'train_to': cur.get('train_to'),
+        'prev_version': prev['version'] if prev else None,
+        'rows': rows, 'ic': ic_sorted, 'valid': val, 'holdout': ho,
+        'text': lines,
+    }
+
+
 def list_models():
     conn = db.get_conn()
     rows = conn.execute(

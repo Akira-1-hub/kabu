@@ -60,10 +60,46 @@ def _do_scan(scope, min_pct, surge, mode, workers):
                              daemon=True).start()
         except Exception:
             pass
+        # テスト用システムの日次更新（本番の後に実行。本番へは何も反映しない）
+        threading.Thread(target=_run_test_daily, daemon=True).start()
     except Exception as e:
         scan_state['status'] = f'エラー: {e}'
     finally:
         scan_state['running'] = False
+
+
+def _run_test_daily(asof=None, log=None):
+    """テスト用システムの日次更新（仕様書11の4〜7）。
+      4. 現在のテスト用モデルで特徴量とランキングを作り、その日の内容を固定保存
+      5. 評価期間を迎えた過去の予測に、実際の株価結果を紐づける
+    学習（8〜11）はここでは自動実行せず、画面の「学習を実行」から明示的に行う。
+    データ欠損時は無理に進めない。
+    """
+    import test_features as tf
+    import test_model as tm
+    import test_outcome
+    say = log or (lambda m: test_state['log'].append(str(m)))
+    test_state.update({'running': True, 'status': 'テスト用を更新中...', 'log': []})
+    try:
+        asof = asof or db.latest_price_date()
+        if not asof:
+            test_state['status'] = '株価データがないため中止'
+            return
+        rows = tf.build(asof)
+        if not rows:
+            test_state['status'] = f'{asof}: 対象銘柄なし（空売りデータ待ち）'
+            return
+        tf.save(asof, rows)
+        model = tm.current_model()
+        tm.predict(asof, rows, model, limit=200)
+        say(f'{asof}: {len(rows):,}銘柄の特徴量とランキングを保存（{model["version"]}）')
+        n = test_outcome.fill(log=say)
+        test_state['status'] = f'{asof} 更新完了（予測{len(rows):,}件／結果{n:,}件）'
+    except Exception as e:
+        test_state['status'] = f'エラー: {e}'
+    finally:
+        test_state['running'] = False
+        test_state['finished'] = datetime.now().strftime('%m/%d %H:%M')
 
 
 # ============================================================
@@ -536,6 +572,52 @@ def api_test_summary():
     rows = test_eval.load_joined(m['version'])
     return jsonify({'version': m['version'],
                     'metrics': test_eval.evaluate(rows, main='mx5')})
+
+
+@app.route('/api/test/model')
+def api_test_model():
+    """モデルの中身を日本語で説明したもの（バージョンをクリックしたとき用）"""
+    import test_model as tm
+    return jsonify(tm.describe(request.args.get('version')) or {})
+
+
+@app.route('/api/test/learn_ready')
+def api_test_learn_ready():
+    """今『学習を実行』を押す価値があるかの目安"""
+    import test_learn
+    import test_model as tm
+    m = tm.current_model()
+    conn = db.get_conn()
+    n_out = conn.execute('SELECT COUNT(*) c FROM test_outcomes').fetchone()['c']
+    n_days = conn.execute(
+        'SELECT COUNT(DISTINCT date) c FROM test_outcomes').fetchone()['c']
+    # 前回の学習以降に増えた結果件数
+    since = m.get('created_at') or ''
+    n_new = conn.execute(
+        'SELECT COUNT(*) c FROM test_outcomes WHERE filled_at > ?', (since,)).fetchone()['c']
+    conn.close()
+    enough = n_days >= test_learn.MIN_DAYS and n_out >= test_learn.MIN_SAMPLES
+    if not enough:
+        msg = (f'学習にはあと {max(0, test_learn.MIN_DAYS - n_days)}日 / '
+               f'{max(0, test_learn.MIN_SAMPLES - n_out):,}件 必要です')
+    elif n_new < 2000:
+        msg = (f'前回のモデル作成以降に増えた結果は {n_new:,}件です。'
+               'まだ材料が少ないので、押しても結果は変わりにくいです（月1回程度が目安）')
+    else:
+        msg = f'前回以降 {n_new:,}件の結果が増えています。学習を試す価値があります'
+    return jsonify({'enough': enough, 'n_out': n_out, 'n_days': n_days,
+                    'n_new': n_new, 'msg': msg,
+                    'min_days': test_learn.MIN_DAYS,
+                    'min_samples': test_learn.MIN_SAMPLES})
+
+
+@app.route('/api/test/update', methods=['POST'])
+def api_test_update():
+    """テスト用を今すぐ更新（通常はスキャン完了時に自動実行される）"""
+    if test_state['running']:
+        return jsonify({'ok': False, 'msg': '実行中です'})
+    threading.Thread(target=_run_test_daily, daemon=True).start()
+    return jsonify({'ok': True})
 
 
 @app.route('/api/test/learn', methods=['POST'])

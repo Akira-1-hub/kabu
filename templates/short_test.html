@@ -27,6 +27,9 @@
      href="/short-test?tab={{ k }}{{ '&date='+target if target and k in ('latest','past') }}">{{ l }}</a>
   {% endfor %}
   <span class="spacer" style="flex:1"></span>
+  <button class="btn btn-sm btn-ghost" id="btn-tupd" onclick="updateTest()"
+          title="通常はスキャン完了時に自動で更新されます">⟳ 今すぐ更新</button>
+  <span class="muted" id="tupd-status" style="font-size:11px"></span>
   {% if tab in ('latest','past') and days %}
   <label class="muted" style="font-size:12px">日付</label>
   <select onchange="location.href='/short-test?tab={{ tab }}&date='+this.value"
@@ -109,6 +112,16 @@
       <div><span class="muted">蓄積データ</span> <b>{{ '{:,}'.format(stats.n_out) }}</b> 件の結果</div>
     </div>
     <div class="muted" style="font-size:12px;margin-top:8px">{{ model.reason }}</div>
+    <div id="ready-box" style="margin-top:10px;padding:8px 10px;border-radius:6px;
+         background:var(--bg3);border:1px solid var(--border);font-size:12px"></div>
+    <div class="muted" style="font-size:11px;margin-top:6px">
+      ※「学習を実行」は<b>新しい結果が溜まったとき</b>に押します（月1回程度が目安）。
+      材料が増えていなければ結果は変わりません。押しても<b>本番ランキングには一切反映されません</b>。
+      条件を満たさない場合はテスト用モデルも更新されず、理由が記録されます。
+    </div>
+    <div style="margin-top:8px">
+      <a class="btn btn-sm btn-ghost" href="/short-test?tab=models">現在の重みの詳しい説明を見る</a>
+    </div>
     <pre id="learn-log" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;
          padding:10px;margin-top:10px;font-size:11.5px;max-height:420px;overflow:auto;
          white-space:pre-wrap;display:none"></pre>
@@ -146,16 +159,23 @@
 
 {# ============ 重み履歴 ============ #}
 {% if tab == 'models' %}
+<div class="card" id="mdl-card" style="display:none;margin-bottom:14px;border-color:#3a5a7a">
+  <h2><span id="mdl-title">モデルの内容</span>
+    <button class="btn btn-sm btn-ghost" onclick="document.getElementById('mdl-card').style.display='none'">閉じる</button>
+  </h2>
+  <div class="body" id="mdl-body"></div>
+</div>
+
 <div class="card">
-  <h2>🗂 重みバージョン履歴<span class="muted">上書きせず全て保存</span></h2>
+  <h2>🗂 重みバージョン履歴<span class="muted">行をクリックすると内容を表示（上書きせず全て保存）</span></h2>
   <div class="table-wrap"><table>
     <thead><tr><th class="txt-left">バージョン</th><th class="txt-left">作成</th>
       <th class="txt-left">適用期間</th><th>学習件数</th><th class="txt-left">由来</th>
       <th class="txt-left">理由・結果</th><th>現行</th></tr></thead>
     <tbody>
       {% for m in models %}
-      <tr>
-        <td class="txt-left"><b>{{ m.version }}</b></td>
+      <tr onclick="showModel('{{ m.version }}')" style="cursor:pointer" title="クリックで内容を表示">
+        <td class="txt-left"><b style="color:var(--accent2)">{{ m.version }}</b></td>
         <td class="txt-left muted" style="font-size:11px">{{ m.created_at }}</td>
         <td class="txt-left muted" style="font-size:11px">{{ m.applied_from }} 〜 {{ m.applied_to or '現在' }}</td>
         <td>{{ '{:,}'.format(m.n_train or 0) }}</td>
@@ -216,6 +236,52 @@ if (TAB === 'result') {
   });
 }
 
+async function updateTest(){
+  const r = await (await fetch('/api/test/update',{method:'POST'})).json();
+  if(!r.ok){ alert(r.msg); return; }
+  document.getElementById('btn-tupd').disabled = true;
+  pollUpdate();
+}
+async function pollUpdate(){
+  const s = await (await fetch('/api/test/status')).json();
+  const b = document.getElementById('btn-tupd');
+  const st = document.getElementById('tupd-status');
+  if(s.running){ b.textContent='⏳ 更新中'; st.textContent=s.status||''; setTimeout(pollUpdate,1500); }
+  else {
+    b.disabled=false; b.textContent='⟳ 今すぐ更新';
+    st.textContent = s.status ? s.status + (s.finished?`（${s.finished}）`:'') : '';
+    if(s.status && s.status.includes('更新完了')) setTimeout(()=>location.reload(), 900);
+  }
+}
+
+// バージョンをクリック → 内容を日本語で表示
+async function showModel(v){
+  const d = await (await fetch('/api/test/model?version='+encodeURIComponent(v))).json();
+  if(!d.version) return;
+  const card=document.getElementById('mdl-card');
+  document.getElementById('mdl-title').textContent =
+    `📄 ${d.version} の内容（${d.source==='auto'?'自動学習':'手動設定'}${d.is_current?'・使用中':''}）`;
+  const sign = x => x==null ? '' : (x>0?`<span class="rise">+${x}</span>`:(x<0?`<span class="fall">${x}</span>`:'<span class="muted">±0</span>'));
+  document.getElementById('mdl-body').innerHTML = `
+    <div style="font-size:13px;line-height:1.9;margin-bottom:12px">
+      ${d.text.map(t=>`<div>・${t}</div>`).join('')}
+    </div>
+    <div class="table-wrap" style="max-height:420px;overflow-y:auto"><table>
+      <thead><tr><th class="txt-left">評価項目</th><th>重み</th><th>割合</th>
+        <th>前版から</th><th class="txt-left">意味</th></tr></thead>
+      <tbody>${d.rows.map(r=>`<tr>
+        <td class="txt-left"><b>${r.key}</b></td>
+        <td><b class="${r.weight>0?'both':'muted'}">${r.weight.toFixed(2)}</b></td>
+        <td class="muted">${r.share}%</td>
+        <td>${sign(r.diff)}</td>
+        <td class="txt-left muted" style="white-space:normal">${r.desc}</td></tr>`).join('')}
+      </tbody></table></div>
+    ${d.ic.length ? `<div class="muted" style="font-size:11px;margin-top:8px">
+      学習時のIC（将来の上昇との関係の強さ）: ${d.ic.slice(0,6).map(([k,v])=>`${k} ${v>=0?'+':''}${v.toFixed(3)}`).join(' / ')}</div>`:''}`;
+  card.style.display='block';
+  card.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
 async function runLearn(){
   const r = await (await fetch('/api/test/learn',{method:'POST'})).json();
   if(!r.ok){ alert(r.msg); return; }
@@ -231,6 +297,18 @@ async function pollLearn(){
   if(s.running){ b.textContent='⏳ 学習中'; setTimeout(pollLearn, 1500); }
   else { b.disabled=false; b.textContent='学習を実行'; }
 }
-if (TAB === 'learn') pollLearn();
+if (TAB === 'learn') {
+  pollLearn();
+  fetch('/api/test/learn_ready').then(r=>r.json()).then(d=>{
+    const el=document.getElementById('ready-box'); if(!el) return;
+    const mark = d.enough ? (d.n_new>=2000 ? '✅' : 'ℹ️') : '⏳';
+    el.innerHTML = `${mark} ${d.msg}`
+      + `<span class="muted" style="margin-left:10px">（蓄積 ${d.n_days}日 / ${d.n_out.toLocaleString()}件）</span>`;
+    if(!d.enough || d.n_new<2000){
+      const b=document.getElementById('btn-learn');
+      if(b) b.className='btn btn-sm btn-ghost';
+    }
+  });
+}
 </script>
 {% endblock %}

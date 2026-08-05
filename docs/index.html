@@ -27,6 +27,7 @@
   <a class="tab" data-tab="heatmap" href="#heatmap">ヒートマップ</a>
   <a class="tab" data-tab="world" href="#world">指数・米国株</a>
   <a class="tab" data-tab="short" href="#short">空売り</a>
+  <a class="tab" data-tab="stest" href="#stest" style="color:#ff9f43">空売り(テスト)</a>
   <a class="tab" data-tab="watch" href="#watch">ウォッチ</a>
   <span class="spacer"></span>
   <span class="upd" id="updated">読み込み中...</span>
@@ -287,6 +288,51 @@
     </div>
   </div>
 
+  <!-- ===== 空売り（テスト用） ===== -->
+  <div class="panel" id="p-stest">
+    <div style="background:linear-gradient(90deg,rgba(255,159,67,.22),transparent);
+                border:1px solid #7a4a20;border-left:4px solid #ff9f43;
+                border-radius:8px;padding:9px 14px;margin-bottom:14px">
+      <b style="color:#ffb870">🧪 テスト用（検証・学習専用）</b>
+      <span class="muted" style="font-size:12px;margin-left:8px">
+        本番の「空売り」ランキングとは別システムです。ここの結果が本番へ反映されることはありません。
+      </span>
+    </div>
+    <div class="page-title">🧪 空売り（テスト用）
+      <span class="muted" id="st-note" style="font-size:13px;font-weight:400"></span>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <h2>🧪 テスト用ランキング<span class="muted" id="st-sub"></span></h2>
+      <div class="table-wrap" style="max-height:600px;overflow-y:auto"><table>
+        <thead><tr><th>順位</th><th class="txt-left">コード</th><th class="txt-left">銘柄名</th>
+          <th>スコア</th><th>信頼度</th><th>判定時株価</th><th>残高%</th>
+          <th title="増加量と減少量の絶対値合計">回転度</th>
+          <th title="増やす機関と減らす機関の混在度">交錯度</th>
+          <th class="hide-sp">期間騰落</th><th class="hide-sp">買戻日数</th>
+          <th class="hide-sp">結果(最大5日)</th>
+          <th class="txt-left hide-sp">スコアの内訳</th></tr></thead>
+        <tbody id="st-rows"></tbody></table></div>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <h2>📊 予測結果の集計</h2>
+      <div class="body"><div id="st-metrics" class="muted">読み込み中...</div></div>
+    </div>
+    <div class="card" id="st-mdl-card" style="display:none;margin-bottom:14px;border-color:#3a5a7a">
+      <h2><span id="st-mdl-title">モデルの内容</span>
+        <button class="btn btn-sm btn-ghost" onclick="document.getElementById('st-mdl-card').style.display='none'">閉じる</button>
+      </h2>
+      <div class="body" id="st-mdl-body"></div>
+    </div>
+    <div class="card">
+      <h2>🗂 重みバージョン履歴<span class="muted">行をクリックすると内容を表示</span></h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="txt-left">バージョン</th><th class="txt-left">作成</th>
+          <th class="txt-left">適用期間</th><th>学習件数</th><th class="txt-left">由来</th>
+          <th class="txt-left">理由・結果</th><th>現行</th></tr></thead>
+        <tbody id="st-models"></tbody></table></div>
+    </div>
+  </div>
+
   <!-- ===== ウォッチ ===== -->
   <div class="panel" id="p-watch">
     <div class="page-title">⭐ ウォッチリスト <span class="muted" id="w-cnt" style="font-size:13px;font-weight:400"></span></div>
@@ -370,7 +416,7 @@ function injectStars(){
 new MutationObserver(()=>injectStars()).observe(document.body,{childList:true,subtree:true});
 
 // ===== タブ =====
-const TABS=['dashboard','stocks','gainers','rankings','heatmap','world','short','watch'];
+const TABS=['dashboard','stocks','gainers','rankings','heatmap','world','short','stest','watch'];
 function currentTab(){ const h=location.hash.replace('#',''); return TABS.includes(h)?h:'dashboard'; }
 function showTab(t){
   TABS.forEach(x=>{
@@ -407,7 +453,8 @@ fetch('data.json').then(r=>r.json()).then(j=>{
                                     change:p.change,pct:p.pct,vol:p.vol,ratio:p.ratio,
                                     cap:p.cap,sr:p.sr,sec:p.sec}));
   dPrices.forEach(p=>{ META[p.code]={cap:p.cap, sr:p.sr}; });
-  renderDash(); renderStocks(); renderGainers(); renderRankings(); renderShort(); renderWorld();
+  renderDash(); renderStocks(); renderGainers(); renderRankings(); renderShort();
+  renderWorld(); renderShortTest();
   showTab(currentTab());
 }).catch(e=>{ document.getElementById('updated').textContent='data.json 読込失敗'; });
 
@@ -700,6 +747,95 @@ document.addEventListener('click', e=>{
   b.classList.add('on');
   if(WCHART) WCHART.setDays(parseInt(b.dataset.d));
 });
+
+// ===== 空売り（テスト用） =====
+function renderShortTest(){
+  const S = D && D.short_test;
+  if(!S){ const el=document.getElementById('st-rows');
+    if(el) el.innerHTML='<tr><td colspan="13" class="empty">テスト用データがありません</td></tr>'; return; }
+  document.getElementById('st-note').textContent =
+    `モデル ${S.version} ／ 予測 ${(S.stats.n_pred||0).toLocaleString()}件・${S.stats.n_days}日 ／ 結果 ${(S.stats.n_out||0).toLocaleString()}件`;
+  document.getElementById('st-sub').textContent =
+    `${S.latest}${S.rows[0]&&S.rows[0].data_date?`（使用データ最終日 ${S.rows[0].data_date}）`:''}`;
+
+  const p = v => v==null?'<span class="muted">-</span>'
+    : `<span class="${v>0?'rise':(v<0?'fall':'muted')}">${(v>=0?'+':'')+v.toFixed(2)}%</span>`;
+  document.getElementById('st-rows').innerHTML = S.rows.map(r=>`<tr>
+    <td><b>${r.rank}</b></td>
+    <td class="txt-left code">${lk(r.code,r.code)}</td>
+    <td class="txt-left">${r.name||'-'}</td>
+    <td><b class="both" style="font-size:14px">${r.score.toFixed(2)}</b></td>
+    <td class="${(r.confidence||0)>=0.9?'muted':'fall'}">${(r.confidence||0).toFixed(2)}</td>
+    <td>${r.close!=null?Math.round(r.close).toLocaleString():'-'}</td>
+    <td><b>${r.short_ratio!=null?r.short_ratio.toFixed(1)+'%':'-'}</b></td>
+    <td>${r.turnover!=null?r.turnover.toFixed(2):'-'}</td>
+    <td>${r.crossing!=null?r.crossing.toFixed(2):'-'}</td>
+    <td class="hide-sp">${p(r.price_gain)}</td>
+    <td class="hide-sp">${r.dtc!=null?r.dtc.toFixed(1)+'日':'-'}</td>
+    <td class="hide-sp">${p(r.mx5)}</td>
+    <td class="txt-left hide-sp muted" style="font-size:11px;white-space:normal;max-width:260px">
+      ${(r.top||[]).map(([k,v])=>`${k}=${v}`).join(' / ')}</td></tr>`).join('')
+    || '<tr><td colspan="13" class="empty">データなし</td></tr>';
+
+  // 成績
+  const m = S.metrics||{};
+  const f = v => v==null?'-':(v>=0?'+':'')+v.toFixed(2)+'%';
+  const cl = v => v==null?'muted':(v>0?'rise':'fall');
+  const row = N => `<tr><td><b>上位${N}</b></td>
+    <td class="${cl(m['top'+N+'_r5'])}">${f(m['top'+N+'_r5'])}</td>
+    <td class="${cl(m['top'+N+'_r10'])}">${f(m['top'+N+'_r10'])}</td>
+    <td class="${cl(m['top'+N+'_mx5'])}"><b>${f(m['top'+N+'_mx5'])}</b></td>
+    <td class="${cl(m['top'+N+'_ex5'])}">${f(m['top'+N+'_ex5'])}</td>
+    <td>${m['top'+N+'_win']??'-'}%</td><td>${m['top'+N+'_hit5']??'-'}%</td>
+    <td class="muted">${(m['top'+N+'_n']||0).toLocaleString()}</td></tr>`;
+  document.getElementById('st-metrics').innerHTML = m.n_pred ? `
+    <div class="table-wrap"><table>
+      <thead><tr><th class="txt-left">グループ</th><th>5日</th><th>10日</th>
+        <th title="5営業日以内の最大上昇率">最大5日</th><th title="TOPIX超過">超過5日</th>
+        <th>上昇率</th><th>+10%到達</th><th>件数</th></tr></thead>
+      <tbody>${row(5)}${row(10)}${row(20)}</tbody></table></div>
+    <div style="display:flex;gap:10px 24px;flex-wrap:wrap;margin-top:10px;font-size:12.5px">
+      <div><span class="muted">順位相関</span> <b>${m.ic_mx5??'-'}</b></div>
+      <div><span class="muted">上位10と50位以下の差</span> <b>${f(m.spread_mx5)}</b></div>
+      <div><span class="muted">月別勝率</span> <b>${m.monthly_win??'-'}%</b></div>
+      <div><span class="muted">最悪の月</span> <b class="${cl(m.worst_month)}">${f(m.worst_month)}</b></div>
+      <div><span class="muted">銘柄集中</span> <b>${m.top_code_share??'-'}%</b></div>
+    </div>` : '<span class="muted">結果がまだありません</span>';
+
+  // モデル履歴
+  document.getElementById('st-models').innerHTML = (S.models||[]).map((mm,i)=>`<tr
+      onclick="showTestModel(${i})" style="cursor:pointer" title="クリックで内容を表示">
+    <td class="txt-left"><b style="color:var(--accent2)">${mm.version}</b></td>
+    <td class="txt-left muted" style="font-size:11px">${mm.created_at||''}</td>
+    <td class="txt-left muted" style="font-size:11px">${mm.applied_from||''} 〜 ${mm.applied_to||'現在'}</td>
+    <td>${(mm.n_train||0).toLocaleString()}</td>
+    <td class="txt-left">${mm.source==='auto'?'自動':'手動'}</td>
+    <td class="txt-left muted" style="font-size:11px;white-space:normal;max-width:400px">${mm.reason||''}</td>
+    <td>${mm.is_current?'<span class="badge accent">使用中</span>':''}</td></tr>`).join('')
+    || '<tr><td colspan="7" class="empty">履歴がありません</td></tr>';
+}
+
+function showTestModel(i){
+  const d = (D.short_test.models||[])[i]; if(!d) return;
+  const sign = x => x==null?'':(x>0?`<span class="rise">+${x}</span>`
+    :(x<0?`<span class="fall">${x}</span>`:'<span class="muted">±0</span>'));
+  document.getElementById('st-mdl-title').textContent =
+    `📄 ${d.version} の内容（${d.source==='auto'?'自動学習':'手動設定'}${d.is_current?'・使用中':''}）`;
+  document.getElementById('st-mdl-body').innerHTML = `
+    <div style="font-size:13px;line-height:1.9;margin-bottom:12px">
+      ${(d.text||[]).map(t=>`<div>・${t}</div>`).join('')}</div>
+    <div class="table-wrap" style="max-height:400px;overflow-y:auto"><table>
+      <thead><tr><th class="txt-left">評価項目</th><th>重み</th><th>割合</th>
+        <th>前版から</th><th class="txt-left">意味</th></tr></thead>
+      <tbody>${(d.rows||[]).map(r=>`<tr>
+        <td class="txt-left"><b>${r.key}</b></td>
+        <td><b class="${r.weight>0?'both':'muted'}">${r.weight.toFixed(2)}</b></td>
+        <td class="muted">${r.share}%</td><td>${sign(r.diff)}</td>
+        <td class="txt-left muted" style="white-space:normal">${r.desc}</td></tr>`).join('')}
+      </tbody></table></div>`;
+  const c=document.getElementById('st-mdl-card');
+  c.style.display='block'; c.scrollIntoView({behavior:'smooth',block:'start'});
+}
 
 // ===== ウォッチ =====
 function renderWatch(){
