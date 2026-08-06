@@ -422,8 +422,10 @@ def api_gainers_margins():
     return jsonify({'ok': True})
 
 
-@app.route('/short')
-def short_page():
+def _short_common(base, weights=None):
+    """空売りランキングの中身を作る。本番と調整用で同じ処理を使う。
+    weights を渡すとその重みで採点する（本番は None ＝ 固定値）。
+    """
     period = request.args.get('period', 'weekly')   # 既定は週間（1週間前比）
     custom_from = request.args.get('from') or None
     custom_to = request.args.get('to') or None
@@ -434,23 +436,36 @@ def short_page():
             period.endswith('d') and period[:-1].isdigit() and 0 < int(period[:-1]) <= 730):
         period = 'weekly'
     kw = {'custom_from': custom_from, 'custom_to': custom_to}
+    sq_w = (weights or {}).get('squeeze')
+    cv_w = (weights or {}).get('cover')
     rank = db.short_change_ranking(period, limit=50, **kw)
     new_short = db.short_new_entries(period, limit=50, **kw)
-    squeeze = db.squeeze_ranking(period, limit=50, **kw)
-    cover = db.cover_rally_ranking(period, limit=50, **kw)
+    squeeze = db.squeeze_ranking(period, limit=50, weights=sq_w, **kw)
+    cover = db.cover_rally_ranking(period, limit=50, weights=cv_w, **kw)
     top_ratio = db.short_top_ratio(50)
     _add_cap_short(squeeze['rows'], cover['rows'], rank['increase'],
                    rank['decrease'], new_short['entries'], top_ratio)
-    return render_template('short.html',
-                           period=period,
-                           custom_from=custom_from,
-                           custom_to=custom_to,
-                           rank=rank,
-                           new_short=new_short,
-                           squeeze=squeeze,
-                           cover=cover,
-                           top_ratio=top_ratio,
-                           info=db.short_data_range())
+    return dict(base=base, period=period, custom_from=custom_from,
+                custom_to=custom_to, rank=rank, new_short=new_short,
+                squeeze=squeeze, cover=cover, top_ratio=top_ratio,
+                info=db.short_data_range())
+
+
+@app.route('/short')
+def short_page():
+    return render_template('short.html', variant='main',
+                           **_short_common('/short'))
+
+
+@app.route('/short-b')
+def short_b_page():
+    """空売りランキング（調整用）。重みを変えて試す場所。
+    本番の /short には影響しない。過去の重みはいつでも戻せる。
+    """
+    w = db.alt_current()
+    return render_template('short.html', variant='b', alt=w,
+                           alt_list=db.alt_list(),
+                           **_short_common('/short-b', w))
 
 
 world_state = {'running': False, 'status': '', 'finished': None}
@@ -576,8 +591,48 @@ def api_test_summary():
 
 @app.route('/api/short/weights')
 def api_short_weights():
-    """本番ランキングのスコアの決め方（ツール側の説明表示用）"""
+    """スコアの決め方（ツール側の説明表示用）。?alt=1 で調整用の重み"""
+    if request.args.get('alt'):
+        w = db.alt_current()
+        d = db.describe_weights(w['squeeze'], w['cover'])
+        d['version'] = w['version']
+        d['note'] = w['note']
+        return jsonify(d)
     return jsonify(db.describe_weights())
+
+
+@app.route('/api/short-b/weights', methods=['POST'])
+def api_short_b_save():
+    """調整用の重みを新しいバージョンとして保存する（既存は消さない）"""
+    d = request.json or {}
+    cur = db.alt_current()
+    sq = dict(cur['squeeze'])
+    cv = dict(cur['cover'])
+    for k, v in (d.get('squeeze') or {}).items():
+        if k in sq:
+            try:
+                sq[k] = max(0.0, min(50.0, float(v)))
+            except (TypeError, ValueError):
+                pass
+    for k, v in (d.get('cover') or {}).items():
+        if k in cv:
+            try:
+                cv[k] = max(0.0, min(50.0, float(v)))
+            except (TypeError, ValueError):
+                pass
+    if sq == cur['squeeze'] and cv == cur['cover']:
+        return jsonify({'ok': False, 'msg': '変更がありません'})
+    new = db.alt_save(sq, cv, note=(d.get('note') or '').strip())
+    return jsonify({'ok': True, 'version': new['version']})
+
+
+@app.route('/api/short-b/use', methods=['POST'])
+def api_short_b_use():
+    """過去のバージョンに戻す"""
+    v = (request.json or {}).get('version')
+    if not v or not db.alt_use(v):
+        return jsonify({'ok': False, 'msg': 'そのバージョンが見つかりません'})
+    return jsonify({'ok': True, 'version': v})
 
 
 @app.route('/api/test/model')

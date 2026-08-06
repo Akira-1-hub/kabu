@@ -1,19 +1,32 @@
 {% extends "base.html" %}
-{% block title %}空売りランキング - 投資DB{% endblock %}
+{% block title %}{{ '空売りランキング(調整用)' if variant=='b' else '空売りランキング' }} - 投資DB{% endblock %}
 {% block content %}
 
-<div class="page-title">📉 空売り残高ランキング
+{% if variant == 'b' %}
+<div style="background:linear-gradient(90deg,rgba(124,77,255,.22),transparent);
+            border:1px solid #4a3a7a;border-left:4px solid var(--accent);
+            border-radius:8px;padding:9px 14px;margin-bottom:14px">
+  <b style="color:#b39dff">🎛 調整用（重みを自由に変えて試す場所）</b>
+  <span class="muted" style="font-size:12px;margin-left:8px">
+    本番の「空売り」とは別の重みで動いています。変更するたびに版が残るので、いつでも前に戻せます。
+  </span>
+</div>
+{% endif %}
+
+<div class="page-title">
+  {{ '🎛 空売り残高ランキング（調整用）' if variant=='b' else '📉 空売り残高ランキング' }}
   <span class="muted" style="font-size:13px;font-weight:400">
     {% if rank.latest %}基準 {{ rank.from }} → 最新 {{ rank.latest }}{% endif %}
+    {% if variant=='b' %}／ 重み <b style="color:var(--accent2)">{{ alt.version }}</b>{% endif %}
   </span>
 </div>
 
 <!-- 期間タブ -->
 <div class="scan-panel" style="gap:8px">
   <span class="badge accent">期間</span>
-  <a class="btn btn-sm {{ 'btn-accent' if period=='daily' else 'btn-ghost' }}" href="/short?period=daily">デイリー（前日比）</a>
-  <a class="btn btn-sm {{ 'btn-accent' if period=='weekly' else 'btn-ghost' }}" href="/short?period=weekly">週間（1週間前比）</a>
-  <a class="btn btn-sm {{ 'btn-accent' if period=='thisweek' else 'btn-ghost' }}" href="/short?period=thisweek">今週（週初比）</a>
+  <a class="btn btn-sm {{ 'btn-accent' if period=='daily' else 'btn-ghost' }}" href="{{ base }}?period=daily">デイリー（前日比）</a>
+  <a class="btn btn-sm {{ 'btn-accent' if period=='weekly' else 'btn-ghost' }}" href="{{ base }}?period=weekly">週間（1週間前比）</a>
+  <a class="btn btn-sm {{ 'btn-accent' if period=='thisweek' else 'btn-ghost' }}" href="{{ base }}?period=thisweek">今週（週初比）</a>
   <span style="width:1px;height:22px;background:var(--border);margin:0 4px"></span>
   <label class="muted" style="font-size:12px">期間指定</label>
   <input type="date" id="cf" value="{{ custom_from or '' }}" max="{{ info.max_d or '' }}"
@@ -24,21 +37,65 @@
          style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 6px;font-size:12px">
   <button class="btn btn-sm {{ 'btn-accent' if period=='custom' else 'btn-ghost' }}" onclick="applyCustom()">比較</button>
   {% for d,l in [('14d','2週間'),('30d','1ヶ月'),('90d','3ヶ月')] %}
-  <a class="btn btn-sm {{ 'btn-accent' if period==d else 'btn-ghost' }}" href="/short?period={{ d }}" style="font-size:11px;padding:4px 8px">{{ l }}</a>
+  <a class="btn btn-sm {{ 'btn-accent' if period==d else 'btn-ghost' }}" href="{{ base }}?period={{ d }}" style="font-size:11px;padding:4px 8px">{{ l }}</a>
   {% endfor %}
   <span class="spacer" style="flex:1"></span>
-  <button class="btn btn-sm btn-ghost" onclick="toggleWeights()">⚖ 重みを見る</button>
+  <button class="btn btn-sm btn-ghost" onclick="toggleWeights()">⚖ 重みを見る{{ '・変える' if variant=='b' }}</button>
   <span class="muted" style="font-size:12px">累計{{ '{:,}'.format(info.n) }}件 / {{ info.codes }}銘柄</span>
 </div>
 
 <!-- スコアの決め方（ツール側のみ・公開サイトには出しません） -->
 <div class="card" id="w-card" style="display:none;margin-bottom:14px;border-color:#3a5a7a">
   <h2>⚖ このランキングのスコアの決め方
+    {% if variant=='b' %}<span class="muted">数値を直せます。保存すると新しい版になります</span>{% endif %}
     <button class="btn btn-sm btn-ghost" onclick="toggleWeights()">閉じる</button>
   </h2>
   <div class="body" id="w-body"><span class="muted">読み込み中...</span></div>
+  {% if variant=='b' %}
+  <div class="body" style="border-top:1px solid var(--border)">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input type="text" id="w-note" placeholder="変更のねらい（例: 回転度を重視してみる）"
+             style="flex:1 1 260px;background:var(--bg);border:1px solid var(--border);
+                    color:var(--text);border-radius:5px;padding:6px 9px;font-size:12px">
+      <button class="btn btn-sm btn-accent" onclick="saveWeights()">この内容で保存（新しい版）</button>
+      <button class="btn btn-sm btn-ghost" onclick="location.reload()">変更を取り消す</button>
+    </div>
+    <div class="muted" id="w-msg" style="font-size:12px;margin-top:6px"></div>
+  </div>
+  {% endif %}
 </div>
+
+{% if variant=='b' %}
+<!-- 重みの版の履歴。いつでも戻せる -->
+<div class="card" id="v-card" style="display:none;margin-bottom:14px">
+  <h2>🗂 重みの版<span class="muted">押すとその重みに戻ります（今の内容も残ります）</span>
+    <button class="btn btn-sm btn-ghost" onclick="toggleVersions()">閉じる</button>
+  </h2>
+  <div class="table-wrap" style="max-height:320px;overflow-y:auto">
+    <table>
+      <thead><tr><th class="txt-left">版</th><th class="txt-left">作成</th>
+        <th class="txt-left">ねらい</th><th></th></tr></thead>
+      <tbody>
+        {% for v in alt_list %}
+        <tr>
+          <td class="txt-left"><b style="color:var(--accent2)">{{ v.version }}</b>
+            {% if v.is_current %}<span class="badge accent">使用中</span>{% endif %}</td>
+          <td class="txt-left muted" style="font-size:11px">{{ v.created_at }}</td>
+          <td class="txt-left muted" style="white-space:normal">{{ v.note or '-' }}</td>
+          <td>{% if not v.is_current %}
+            <button class="btn btn-sm btn-ghost" onclick="useVersion('{{ v.version }}')">この版に戻す</button>
+          {% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
 <script>
+const BASE = '{{ base }}';
+const IS_ALT = {{ 'true' if variant=='b' else 'false' }};
 // 重みの説明（本番ランキングは手動の固定値。学習では変わらない）
 let W_LOADED = false;
 function toggleWeights(){
@@ -51,8 +108,14 @@ function toggleWeights(){
   }
 }
 async function loadWeights(){
-  const d = await (await fetch('/api/short/weights')).json();
-  const block = s => `
+  const d = await (await fetch('/api/short/weights' + (IS_ALT ? '?alt=1' : ''))).json();
+  const cell = (grp, r) => IS_ALT
+    ? `<input type="number" step="0.5" min="0" max="50" value="${r.weight}"
+         data-grp="${grp}" data-key="${r.key}" class="w-in"
+         style="width:74px;background:var(--bg);border:1px solid var(--border);
+                color:var(--text);border-radius:5px;padding:4px 6px;font-size:12px;text-align:right">`
+    : `<b class="both">${r.weight.toFixed(2)}</b>`;
+  const block = (s, grp) => `
     <div style="margin-bottom:14px">
       <div style="font-weight:700;margin-bottom:6px">${s.title}</div>
       <div style="font-size:12.5px;line-height:1.9;margin-bottom:8px">
@@ -62,19 +125,47 @@ async function loadWeights(){
           <th class="txt-left">意味</th></tr></thead>
         <tbody>${s.rows.map(r=>`<tr>
           <td class="txt-left"><b>${r.name}</b> <span class="muted" style="font-size:11px">${r.key}</span></td>
-          <td><b class="both">${r.weight.toFixed(2)}</b></td>
+          <td>${cell(grp, r)}</td>
           <td class="muted">${r.share}%</td>
           <td class="txt-left muted" style="white-space:normal">${r.desc}</td></tr>`).join('')}
         </tbody></table></div>
     </div>`;
   document.getElementById('w-body').innerHTML =
-    block(d.squeeze) + block(d.cover) +
+    (d.version ? `<div class="muted" style="font-size:12px;margin-bottom:10px">
+        使用中の版 <b style="color:var(--accent2)">${d.version}</b>
+        ${d.note ? '（' + d.note + '）' : ''}
+        <button class="btn btn-sm btn-ghost" style="margin-left:8px" onclick="toggleVersions()">版の履歴</button>
+      </div>` : '') +
+    block(d.squeeze, 'squeeze') + block(d.cover, 'cover') +
     `<div style="display:flex;gap:8px 22px;flex-wrap:wrap;font-size:12px;margin-bottom:8px">
        ${Object.entries(d.thresholds).map(([k,v])=>
          `<div><span class="muted">${k}</span> <b>${v}</b></div>`).join('')}
      </div>
      <div class="muted" style="font-size:11px;line-height:1.8">
        ${d.notes.map(t=>`<div>※${t}</div>`).join('')}</div>`;
+}
+
+function toggleVersions(){
+  const c = document.getElementById('v-card'); if(!c) return;
+  c.style.display = (c.style.display === 'none') ? 'block' : 'none';
+  if(c.style.display === 'block') c.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+async function saveWeights(){
+  const body = {squeeze:{}, cover:{}, note: document.getElementById('w-note').value};
+  document.querySelectorAll('.w-in').forEach(i=>{ body[i.dataset.grp][i.dataset.key] = i.value; });
+  const r = await (await fetch('/api/short-b/weights',{method:'POST',
+    headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json();
+  const msg = document.getElementById('w-msg');
+  if(!r.ok){ msg.textContent = r.msg; return; }
+  msg.textContent = `${r.version} として保存しました。順位を作り直します...`;
+  setTimeout(()=>location.reload(), 700);
+}
+
+async function useVersion(v){
+  const r = await (await fetch('/api/short-b/use',{method:'POST',
+    headers:{'Content-Type':'application/json'}, body:JSON.stringify({version:v})})).json();
+  if(r.ok) location.reload(); else alert(r.msg);
 }
 
 function applyCustom(){
@@ -84,7 +175,7 @@ function applyCustom(){
   const q = new URLSearchParams({period:'custom'});
   if(f) q.set('from', f);
   if(t) q.set('to', t);
-  location.href = '/short?' + q;
+  location.href = BASE + '?' + q;
 }
 </script>
 

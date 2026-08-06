@@ -220,6 +220,16 @@ CREATE TABLE IF NOT EXISTS test_evaluations (
     note        TEXT
 );
 
+-- 空売りランキング（調整用）の重み。上書きせずバージョンで残し、いつでも戻せる
+CREATE TABLE IF NOT EXISTS alt_weights (
+    version     TEXT PRIMARY KEY,   -- B_v001 など
+    created_at  TEXT,
+    squeeze     TEXT,               -- JSON
+    cover       TEXT,               -- JSON
+    note        TEXT,               -- 変更のねらい
+    is_current  INTEGER DEFAULT 0
+);
+
 -- スキャン実行ログ
 CREATE TABLE IF NOT EXISTS scan_runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -864,10 +874,82 @@ def _momentum_days(period, from_date, latest):
     return max(2, min(int(n) + 1, 500))
 
 
-def describe_weights():
-    """本番ランキングのスコアの決め方を、日本語で読める形にして返す。
-    （テスト用と違い、この重みは学習では変わらない。手動で決めた固定値）
+# ============================================================
+# 空売りランキング（調整用）の重み
+#   本番の SQUEEZE_WEIGHTS / COVER_WEIGHTS は触らない。
+#   こちらは自由に変えてよく、変更は毎回バージョンとして残す。
+# ============================================================
+def alt_current():
+    """調整用の現在の重み。無ければ本番のコピーで初版を作る。"""
+    import json
+    conn = get_conn()
+    r = conn.execute(
+        'SELECT * FROM alt_weights WHERE is_current=1 LIMIT 1').fetchone()
+    conn.close()
+    if r:
+        d = dict(r)
+        d['squeeze'] = json.loads(d['squeeze'])
+        d['cover'] = json.loads(d['cover'])
+        return d
+    return alt_save(dict(SQUEEZE_WEIGHTS), dict(COVER_WEIGHTS),
+                    note='初版（本番と同じ重みからの出発点）')
+
+
+def alt_save(squeeze, cover, note=''):
+    """新しいバージョンとして保存し、それを使用中にする（既存は消さない）"""
+    import json
+    from datetime import datetime as _dt
+    conn = get_conn()
+    n = conn.execute('SELECT COUNT(*) c FROM alt_weights').fetchone()['c']
+    version = f'B_v{n + 1:03d}'
+    conn.execute('UPDATE alt_weights SET is_current=0')
+    conn.execute(
+        'INSERT INTO alt_weights (version,created_at,squeeze,cover,note,is_current) '
+        'VALUES(?,?,?,?,?,1)',
+        (version, _dt.now().isoformat(timespec='seconds'),
+         json.dumps(squeeze, ensure_ascii=False),
+         json.dumps(cover, ensure_ascii=False), note))
+    conn.commit()
+    conn.close()
+    return {'version': version, 'squeeze': squeeze, 'cover': cover,
+            'note': note, 'is_current': 1}
+
+
+def alt_list():
+    import json
+    conn = get_conn()
+    rows = conn.execute(
+        'SELECT * FROM alt_weights ORDER BY created_at DESC').fetchall()
+    conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d['squeeze'] = json.loads(d['squeeze'])
+        d['cover'] = json.loads(d['cover'])
+        out.append(d)
+    return out
+
+
+def alt_use(version):
+    """過去のバージョンに戻す（現在の内容は消さずに切り替えるだけ）"""
+    conn = get_conn()
+    ok = conn.execute('SELECT 1 FROM alt_weights WHERE version=?',
+                      (version,)).fetchone()
+    if ok:
+        conn.execute('UPDATE alt_weights SET is_current=0')
+        conn.execute('UPDATE alt_weights SET is_current=1 WHERE version=?', (version,))
+        conn.commit()
+    conn.close()
+    return bool(ok)
+
+
+def describe_weights(squeeze=None, cover=None):
+    """ランキングのスコアの決め方を、日本語で読める形にして返す。
+    squeeze/cover を渡すとその重みで説明する（調整用ページ向け）。
+    省略時は本番の固定値。
     """
+    squeeze = squeeze or SQUEEZE_WEIGHTS
+    cover = cover or COVER_WEIGHTS
     sq_desc = {
         'short_level': ('残高水準', '今どれだけ空売りが積み上がっているか（％）。'
                                     '踏ませる玉の多さ。ここが実質の主役。'),
@@ -902,7 +984,7 @@ def describe_weights():
     return {
         'squeeze': {
             'title': '🔥 踏み上げ警戒（空売り増加 × 株価上昇）',
-            'rows': rows_of(SQUEEZE_WEIGHTS, sq_desc),
+            'rows': rows_of(squeeze, sq_desc),
             'text': [
                 'この順位は「点火前に燃料が溜まっている銘柄」を探すためのものです。'
                 '空売りが増えているのに株価が下がっていない銘柄ほど上に来ます。',
@@ -914,7 +996,7 @@ def describe_weights():
         },
         'cover': {
             'title': '🚀 踏み上げ進行中（買戻し × 上昇トレンド）',
-            'rows': rows_of(COVER_WEIGHTS, cv_desc),
+            'rows': rows_of(cover, cv_desc),
             'text': [
                 'こちらは「すでに火が点いている銘柄」を探すものです。'
                 '売り方が買い戻していて、かつ株価が上がっている銘柄が上に来ます。',
