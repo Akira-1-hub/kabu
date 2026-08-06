@@ -574,6 +574,12 @@ def api_test_summary():
                     'metrics': test_eval.evaluate(rows, main='mx5')})
 
 
+@app.route('/api/short/weights')
+def api_short_weights():
+    """本番ランキングのスコアの決め方（ツール側の説明表示用）"""
+    return jsonify(db.describe_weights())
+
+
 @app.route('/api/test/model')
 def api_test_model():
     """モデルの中身を日本語で説明したもの（バージョンをクリックしたとき用）"""

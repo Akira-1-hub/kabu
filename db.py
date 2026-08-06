@@ -864,6 +864,81 @@ def _momentum_days(period, from_date, latest):
     return max(2, min(int(n) + 1, 500))
 
 
+def describe_weights():
+    """本番ランキングのスコアの決め方を、日本語で読める形にして返す。
+    （テスト用と違い、この重みは学習では変わらない。手動で決めた固定値）
+    """
+    sq_desc = {
+        'short_level': ('残高水準', '今どれだけ空売りが積み上がっているか（％）。'
+                                    '踏ませる玉の多さ。ここが実質の主役。'),
+        'short_delta': ('空売り増加', '期間中に残高割合が何ポイント増えたか。'),
+        'price_gain':  ('株価上昇', '期間の騰落率（％）。'),
+        'up_days':     ('続伸日数', '期間内に上昇した日数。'),
+        'vol':         ('出来高ボーナス', '出来高が25日平均の1.5倍以上なら固定で加点。'),
+        'surge':       ('急増ボーナス', f'残高増加が{SURGE_PT}pt以上なら固定で加点（🔥）。'),
+        'new_short':   ('新規空売り', f'新しく入ってきた機関の残高pt（上限{NEW_SHORT_CAP}pt）。'),
+        'underwater':  ('直近含み損', f'直近{RECENT_DAYS}日の空売り単価より株価が上にある割合'
+                                       f'（％・上限{UNDERWATER_CAP}）。直近のショートが踏まれている度合い。'),
+        'dtc':         ('買戻日数', f'空売り残高株数÷25日平均出来高（上限{DTC_CAP}日）。'
+                                     '大きいほど逃げ場がない。'),
+    }
+    cv_desc = {
+        'cover_delta': ('買戻し量', '残高割合が何ポイント減ったか＝投げの大きさ。'),
+        'price_gain':  ('株価上昇', '期間の騰落率（％）。'),
+        'up_days':     ('続伸日数', '上昇トレンドの強さ。'),
+        'short_level': ('残る残高', 'まだ残っている空売り＝さらに踏める燃料。'),
+        'vol':         ('出来高ボーナス', '出来高1.5倍以上で固定加点。'),
+    }
+
+    def rows_of(weights, desc):
+        tot = sum(v for v in weights.values() if v > 0) or 1.0
+        out = []
+        for k, v in sorted(weights.items(), key=lambda x: -x[1]):
+            nm, ds = desc.get(k, (k, ''))
+            out.append({'key': k, 'name': nm, 'weight': v,
+                        'share': round(v / tot * 100, 1), 'desc': ds})
+        return out
+
+    return {
+        'squeeze': {
+            'title': '🔥 踏み上げ警戒（空売り増加 × 株価上昇）',
+            'rows': rows_of(SQUEEZE_WEIGHTS, sq_desc),
+            'text': [
+                'この順位は「点火前に燃料が溜まっている銘柄」を探すためのものです。'
+                '空売りが増えているのに株価が下がっていない銘柄ほど上に来ます。',
+                f'残高が {MIN_SQUEEZE_RATIO}% 未満の銘柄と、期間中に株価が上がっていない銘柄は'
+                '最初から対象外にしています（踏ませる玉が少ない／踏み上げではないため）。',
+                '各項目を上の重みで掛けて足したものがスコアです。'
+                '固定加点（出来高・急増）以外は、値が大きいほど点が伸びます。',
+            ],
+        },
+        'cover': {
+            'title': '🚀 踏み上げ進行中（買戻し × 上昇トレンド）',
+            'rows': rows_of(COVER_WEIGHTS, cv_desc),
+            'text': [
+                'こちらは「すでに火が点いている銘柄」を探すものです。'
+                '売り方が買い戻していて、かつ株価が上がっている銘柄が上に来ます。',
+                '残高がまだ残っているほど加点されます（まだ踏める余地があるため）。',
+                '期間中に株価が上がっていない銘柄は対象外です。',
+            ],
+        },
+        'notes': [
+            f'空売り残高は各機関の最新報告を繰り越して合算し、{SHORT_THRESHOLD}%未満は'
+            '報告義務が消えたものとして除いています。',
+            'この重みは手動で決めた固定値です。テスト用システムの学習結果が'
+            'ここへ自動的に反映されることはありません。',
+        ],
+        'thresholds': {
+            '対象とする最低残高': f'{MIN_SQUEEZE_RATIO}%',
+            '急増とみなす増加幅': f'{SURGE_PT}pt',
+            '新規空売りの加点上限': f'{NEW_SHORT_CAP}pt',
+            '直近含み損の対象期間': f'{RECENT_DAYS}日',
+            '直近含み損の加点上限': f'{UNDERWATER_CAP}%',
+            '買戻日数の加点上限': f'{DTC_CAP}日',
+        },
+    }
+
+
 def _price_momentum(k, end_date=None):
     """各銘柄の（end_date以前の）直近k営業日の株価モメンタム
     返り値 code -> {c0(終点終値), gain(%), up_days, vr(出来高倍率), latest}
