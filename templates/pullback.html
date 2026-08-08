@@ -64,11 +64,12 @@
         <th class="hide-sp">20日高値</th><th class="hide-sp">20日安値</th>
         <th class="hide-sp" title="最安値をつけてから何日経ったか">安値後</th>
         <th class="txt-left">反転確認</th>
-        <th class="hide-sp">時価総額</th>
+        <th class="hide-sp">時価総額</th><th></th>
       </tr></thead>
       <tbody>
         {% for r in rows %}
-        <tr onclick="toggleDetail('{{ r.code }}')" style="cursor:pointer" title="クリックで得点の内訳">
+        <tr onclick="location.href='/stock/{{ r.code }}'" style="cursor:pointer"
+            title="クリックでチャートへ">
           <td class="txt-left code"><a href="/stock/{{ r.code }}">{{ r.code }}</a></td>
           <td class="txt-left"><a href="/stock/{{ r.code }}" style="color:inherit">{{ r.name or '-' }}</a></td>
           <td><b class="both" style="font-size:14px">{{ r.score }}</b></td>
@@ -87,9 +88,11 @@
             {% else %}<span class="muted" style="font-size:11px">まだ</span>{% endif %}
           </td>
           <td class="hide-sp">{{ cap(r.market_cap_oku) }}</td>
+          <td><button class="btn btn-sm btn-ghost" style="font-size:11px;padding:3px 8px"
+                onclick="event.stopPropagation();toggleDetail('{{ r.code }}')">内訳</button></td>
         </tr>
         <tr id="d-{{ r.code }}" style="display:none;background:var(--bg3)">
-          <td colspan="13" class="txt-left" style="white-space:normal;padding:8px 12px">
+          <td colspan="14" class="txt-left" style="white-space:normal;padding:8px 12px">
             <span class="muted" style="font-size:11px">得点の内訳（{{ r.score }}点）：</span>
             {% for k, v in r.detail.items() %}
             <span style="display:inline-block;margin:2px 8px 2px 0;font-size:12px">
@@ -102,12 +105,12 @@
             </span>
           </td>
         </tr>
-        {% else %}<tr><td colspan="13" class="empty">条件に合う銘柄がありません（絞り込みを緩めてください）</td></tr>{% endfor %}
+        {% else %}<tr><td colspan="14" class="empty">条件に合う銘柄がありません（絞り込みを緩めてください）</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>
   <div class="muted" style="font-size:11px;padding:6px 12px">
-    ※行をクリックすると得点の内訳が出ます。反転（高値突破・出来高増の陽線）は必須条件ではなく、
+    ※行をクリックするとチャートへ移動します。得点の内訳は右端の「内訳」ボタンで開きます。反転（高値突破・出来高増の陽線）は必須条件ではなく、
     起きていれば印を付けるだけです（反転前に見つけるためのランキングです）。
   </div>
 </div>

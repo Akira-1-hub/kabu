@@ -216,10 +216,10 @@
           <th>直近3日</th>
           <th class="hide-sp">20日高値</th><th class="hide-sp">20日安値</th>
           <th class="hide-sp">安値後</th><th class="txt-left">反転確認</th>
-          <th class="hide-sp">時価総額</th></tr></thead>
+          <th class="hide-sp">時価総額</th><th></th></tr></thead>
         <tbody id="pb-rows"></tbody></table></div>
       <div class="muted" style="font-size:11px;padding:6px 12px">
-        ※行をクリックすると得点の内訳が出ます。反転（高値突破・出来高増の陽線）は必須条件ではなく、
+        ※行をクリックするとチャートへ移動します。得点の内訳は右端の「内訳」ボタンで開きます。反転（高値突破・出来高増の陽線）は必須条件ではなく、
         起きていれば印を付けるだけです（反転前に見つけるためのランキングです）。
       </div>
     </div>
@@ -786,14 +786,15 @@ document.addEventListener('click', e=>{
 function renderPullback(){
   const P = D && D.pullback;
   const body = document.getElementById('pb-rows');
-  if(!P || !P.rows){ if(body) body.innerHTML='<tr><td colspan="13" class="empty">データがありません</td></tr>'; return; }
+  if(!P || !P.rows){ if(body) body.innerHTML='<tr><td colspan="14" class="empty">データがありません</td></tr>'; return; }
   document.getElementById('pb-note').textContent = `${P.rows.length}件（上昇 → 調整 → 売り物が減る → 値動きが収束の段階）`;
   const p = v => v==null?'<span class="muted">-</span>'
     : `<span class="${v>0?'rise':(v<0?'fall':'muted')}">${(v>=0?'+':'')+v.toFixed(1)}%</span>`;
   body.innerHTML = P.rows.map(r=>`
-    <tr onclick="togglePbDetail('${r.code}')" style="cursor:pointer" title="クリックで得点の内訳">
+    <tr onclick="location.href='detail.html?code=${r.code}'" style="cursor:pointer" title="クリックでチャートへ">
       <td class="txt-left code">${lk(r.code,r.code)}</td>
-      <td class="txt-left">${r.name||'-'}</td>
+      <td class="txt-left"><a href="detail.html?code=${r.code}" title="チャートを見る"
+          onclick="event.stopPropagation()" style="color:inherit">${r.name||'-'}</a></td>
       <td><b class="both" style="font-size:14px">${r.score}</b></td>
       <td class="rise">+${r.rise.toFixed(1)}%</td>
       <td class="fall">-${r.drop.toFixed(1)}%</td>
@@ -806,16 +807,18 @@ function renderPullback(){
       <td class="txt-left">${(r.flags||[]).length
         ? r.flags.map(f=>`<span class="badge rise" style="margin-right:3px">${f}</span>`).join('')
         : '<span class="muted" style="font-size:11px">まだ</span>'}</td>
-      <td class="hide-sp">${fmtCap(r.cap)}</td></tr>
+      <td class="hide-sp">${fmtCap(r.cap)}</td>
+      <td><button class="btn btn-sm btn-ghost" style="font-size:11px;padding:3px 8px"
+        onclick="event.stopPropagation();togglePbDetail('${r.code}')">内訳</button></td></tr>
     <tr id="pbd-${r.code}" style="display:none;background:var(--bg3)">
-      <td colspan="13" class="txt-left" style="white-space:normal;padding:8px 12px">
+      <td colspan="14" class="txt-left" style="white-space:normal;padding:8px 12px">
         <span class="muted" style="font-size:11px">得点の内訳（${r.score}点）：</span>
         ${Object.entries(r.detail).map(([k,v])=>
           `<span style="display:inline-block;margin:2px 8px 2px 0;font-size:12px">${P.labels[k]}
             <b class="${v > P.weights[k]*0.7 ? 'both':'muted'}">${v}</b>
             <span class="muted">/${P.weights[k]}</span></span>`).join('')}
         <span class="muted" style="font-size:11px;margin-left:6px">調整${r.pullback_days}日目</span>
-      </td></tr>`).join('') || '<tr><td colspan="13" class="empty">該当なし</td></tr>';
+      </td></tr>`).join('') || '<tr><td colspan="14" class="empty">該当なし</td></tr>';
 
   const i = P.info;
   document.getElementById('pb-how-body').innerHTML = `
@@ -854,7 +857,8 @@ function renderShortTest(){
   document.getElementById('st-rows').innerHTML = S.rows.map(r=>`<tr>
     <td><b>${r.rank}</b></td>
     <td class="txt-left code">${lk(r.code,r.code)}</td>
-    <td class="txt-left">${r.name||'-'}</td>
+    <td class="txt-left"><a href="detail.html?code=${r.code}" title="チャートを見る"
+        style="color:inherit">${r.name||'-'}</a></td>
     <td><b class="both" style="font-size:14px">${r.score.toFixed(2)}</b></td>
     <td class="${(r.confidence||0)>=0.9?'muted':'fall'}">${(r.confidence||0).toFixed(2)}</td>
     <td>${r.close!=null?Math.round(r.close).toLocaleString():'-'}</td>
