@@ -468,6 +468,28 @@ def short_b_page():
                            **_short_common('/short-b', w))
 
 
+@app.route('/pullback')
+def pullback_page():
+    """上昇後・調整終了候補ランキング（空売り系とは独立）"""
+    import pullback as pb
+    try:
+        mt = float(request.args.get('mt', 50))
+    except (TypeError, ValueError):
+        mt = 50.0
+    only_rev = bool(request.args.get('rev'))
+    rows = pb.ranking(limit=60, min_turnover_m=mt, only_reversed=only_rev)
+    _add_cap_short(rows)
+    return render_template('pullback.html', rows=rows, mt=mt, only_rev=only_rev,
+                           info=pb.describe(), weights=pb.WEIGHTS,
+                           weights_label={k: v[0] for k, v in pb.LABEL.items()})
+
+
+@app.route('/api/pullback/describe')
+def api_pullback_describe():
+    import pullback as pb
+    return jsonify(pb.describe())
+
+
 world_state = {'running': False, 'status': '', 'finished': None}
 
 

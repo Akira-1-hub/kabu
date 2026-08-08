@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}上昇後・調整終了候補 - 投資DB{% endblock %}
+{% block content %}
+
+<div class="page-title">📈 上昇後・調整終了候補
+  <span class="muted" style="font-size:13px;font-weight:400">
+    上昇 → 調整 → 売り物が減る → 値動きが収束 の段階を探す（{{ rows|length }}件）
+  </span>
+</div>
+
+<div class="scan-panel" style="gap:8px">
+  <span class="badge accent">絞り込み</span>
+  <label class="muted" style="font-size:12px">売買代金</label>
+  <select onchange="location.href='/pullback?mt='+this.value+'{{ '&rev=1' if only_rev }}'"
+          style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:5px 8px;font-size:12px">
+    {% for v,l in [(0,'制限なし'),(10,'1千万円以上'),(50,'5千万円以上'),(200,'2億円以上'),(500,'5億円以上')] %}
+    <option value="{{ v }}" {{ 'selected' if mt==v }}>{{ l }}</option>
+    {% endfor %}
+  </select>
+  <a class="btn btn-sm {{ 'btn-accent' if only_rev else 'btn-ghost' }}"
+     href="/pullback?mt={{ mt }}{{ '' if only_rev else '&rev=1' }}">
+    {{ '反転確認済みのみ ✓' if only_rev else '反転確認済みのみ' }}</a>
+  <span class="spacer" style="flex:1"></span>
+  <button class="btn btn-sm btn-ghost" onclick="toggleHow()">⚖ 点数の付け方</button>
+</div>
+
+<!-- 点数の付け方 -->
+<div class="card" id="how" style="display:none;margin-bottom:14px;border-color:#3a5a7a">
+  <h2>⚖ {{ info.title }} の点数の付け方
+    <button class="btn btn-sm btn-ghost" onclick="toggleHow()">閉じる</button>
+  </h2>
+  <div class="body">
+    <div style="font-size:12.5px;line-height:1.9;margin-bottom:10px">
+      {% for t in info.text %}<div>・{{ t }}</div>{% endfor %}
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th class="txt-left">評価項目</th><th>配点</th><th class="txt-left">内容</th></tr></thead>
+      <tbody>
+        {% for r in info.rows %}
+        <tr><td class="txt-left"><b>{{ r.name }}</b></td>
+          <td><b class="both">{{ r.weight }}点</b></td>
+          <td class="txt-left muted" style="white-space:normal">{{ r.desc }}</td></tr>
+        {% endfor %}
+      </tbody></table></div>
+    <div class="muted" style="font-size:11px;line-height:1.8;margin-top:8px">
+      {% for t in info.notes %}<div>※{{ t }}</div>{% endfor %}
+    </div>
+  </div>
+</div>
+
+{% macro cap(v) %}{% if v %}{% if v >= 10000 %}{{ '{:.2f}兆'.format(v/10000) }}{% else %}{{ '{:,.0f}億'.format(v) }}{% endif %}{% else %}-{% endif %}{% endmacro %}
+
+<div class="card">
+  <div class="table-wrap" style="max-height:640px;overflow-y:auto">
+    <table>
+      <thead><tr>
+        <th class="txt-left">コード</th><th class="txt-left">銘柄名</th>
+        <th>点数</th>
+        <th title="直近30日の安値から高値までの上昇率">直前上昇</th>
+        <th title="高値から現在値までの下落率">高値からの調整</th>
+        <th title="直近3日の出来高 ÷ 上昇局面の出来高。小さいほど売り物が減っている">出来高比</th>
+        <th title="｜終値-始値｜÷値幅。小さいほど値動きが収束">実体率</th>
+        <th>直近3日</th>
+        <th class="hide-sp">20日高値</th><th class="hide-sp">20日安値</th>
+        <th class="hide-sp" title="最安値をつけてから何日経ったか">安値後</th>
+        <th class="txt-left">反転確認</th>
+        <th class="hide-sp">時価総額</th>
+      </tr></thead>
+      <tbody>
+        {% for r in rows %}
+        <tr onclick="toggleDetail('{{ r.code }}')" style="cursor:pointer" title="クリックで得点の内訳">
+          <td class="txt-left code"><a href="/stock/{{ r.code }}">{{ r.code }}</a></td>
+          <td class="txt-left"><a href="/stock/{{ r.code }}" style="color:inherit">{{ r.name or '-' }}</a></td>
+          <td><b class="both" style="font-size:14px">{{ r.score }}</b></td>
+          <td class="rise">+{{ '{:.1f}%'.format(r.rise) }}</td>
+          <td class="fall">-{{ '{:.1f}%'.format(r.drop) }}</td>
+          <td><b class="{{ 'both' if r.vol_ratio is not none and r.vol_ratio < 0.35 else '' }}">
+            {{ '{:.2f}'.format(r.vol_ratio) if r.vol_ratio is not none else '-' }}</b></td>
+          <td>{{ '{:.2f}'.format(r.body) if r.body is not none else '-' }}</td>
+          <td class="{{ 'rise' if (r.r3 or 0)>0 else ('fall' if (r.r3 or 0)<0 else 'muted') }}">
+            {{ '{:+.1f}%'.format(r.r3) if r.r3 is not none else '-' }}</td>
+          <td class="hide-sp muted">{{ '{:,.0f}'.format(r.hi20) }}</td>
+          <td class="hide-sp muted">{{ '{:,.0f}'.format(r.lo20) }}</td>
+          <td class="hide-sp muted">{{ r.days_since_low }}日</td>
+          <td class="txt-left">
+            {% if r.flags %}{% for f in r.flags %}<span class="badge rise" style="margin-right:3px">{{ f }}</span>{% endfor %}
+            {% else %}<span class="muted" style="font-size:11px">まだ</span>{% endif %}
+          </td>
+          <td class="hide-sp">{{ cap(r.market_cap_oku) }}</td>
+        </tr>
+        <tr id="d-{{ r.code }}" style="display:none;background:var(--bg3)">
+          <td colspan="13" class="txt-left" style="white-space:normal;padding:8px 12px">
+            <span class="muted" style="font-size:11px">得点の内訳（{{ r.score }}点）：</span>
+            {% for k, v in r.detail.items() %}
+            <span style="display:inline-block;margin:2px 8px 2px 0;font-size:12px">
+              {{ weights_label[k] }} <b class="{{ 'both' if v > weights[k]*0.7 else 'muted' }}">{{ v }}</b>
+              <span class="muted">/{{ weights[k] }}</span>
+            </span>
+            {% endfor %}
+            <span class="muted" style="font-size:11px;margin-left:6px">
+              調整{{ r.pullback_days }}日目・売買代金{{ '{:,.0f}'.format(r.turnover) }}百万円
+            </span>
+          </td>
+        </tr>
+        {% else %}<tr><td colspan="13" class="empty">条件に合う銘柄がありません（絞り込みを緩めてください）</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="muted" style="font-size:11px;padding:6px 12px">
+    ※行をクリックすると得点の内訳が出ます。反転（高値突破・出来高増の陽線）は必須条件ではなく、
+    起きていれば印を付けるだけです（反転前に見つけるためのランキングです）。
+  </div>
+</div>
+
+{% endblock %}
+{% block script %}
+<script>
+function toggleHow(){
+  const c=document.getElementById('how');
+  const show = c.style.display==='none';
+  c.style.display = show ? 'block' : 'none';
+  if(show) c.scrollIntoView({behavior:'smooth', block:'start'});
+}
+function toggleDetail(code){
+  const r=document.getElementById('d-'+code);
+  if(r) r.style.display = (r.style.display==='none') ? 'table-row' : 'none';
+}
+</script>
+{% endblock %}

@@ -24,6 +24,7 @@
   <a class="tab" data-tab="stocks" href="#stocks">銘柄一覧</a>
   <a class="tab" data-tab="gainers" href="#gainers">上昇率</a>
   <a class="tab" data-tab="rankings" href="#rankings">ランキング</a>
+  <a class="tab" data-tab="pullback" href="#pullback">調整終了候補</a>
   <a class="tab" data-tab="heatmap" href="#heatmap">ヒートマップ</a>
   <a class="tab" data-tab="world" href="#world">指数・米国株</a>
   <a class="tab" data-tab="short" href="#short">空売り</a>
@@ -188,6 +189,39 @@
       <div class="card"><h2>🔁 継続出現（30日）</h2><div class="table-wrap" style="max-height:480px;overflow-y:auto"><table>
         <thead><tr><th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>回数</th><th class="hide-sp">最終</th><th title="全機関合算の空売り残高割合">空売り%</th><th class="hide-sp">時価総額</th></tr></thead>
         <tbody id="r-hit"></tbody></table></div></div>
+    </div>
+  </div>
+
+  <!-- ===== 上昇後・調整終了候補 ===== -->
+  <div class="panel" id="p-pullback">
+    <div class="page-title">📈 上昇後・調整終了候補
+      <span class="muted" id="pb-note" style="font-size:13px;font-weight:400"></span>
+      <span class="spacer" style="flex:1"></span>
+      <button class="btn btn-sm btn-ghost" onclick="togglePbHow()">⚖ 点数の付け方</button>
+    </div>
+    <div class="card" id="pb-how" style="display:none;margin-bottom:14px;border-color:#3a5a7a">
+      <h2>⚖ 点数の付け方
+        <button class="btn btn-sm btn-ghost" onclick="togglePbHow()">閉じる</button>
+      </h2>
+      <div class="body" id="pb-how-body"></div>
+    </div>
+    <div class="card">
+      <div class="table-wrap" style="max-height:640px;overflow-y:auto"><table>
+        <thead><tr>
+          <th class="txt-left">コード</th><th class="txt-left">銘柄名</th><th>点数</th>
+          <th title="直近30日の安値から高値までの上昇率">直前上昇</th>
+          <th title="高値から現在値までの下落率">高値からの調整</th>
+          <th title="直近3日の出来高÷上昇局面の出来高">出来高比</th>
+          <th title="｜終値-始値｜÷値幅">実体率</th>
+          <th>直近3日</th>
+          <th class="hide-sp">20日高値</th><th class="hide-sp">20日安値</th>
+          <th class="hide-sp">安値後</th><th class="txt-left">反転確認</th>
+          <th class="hide-sp">時価総額</th></tr></thead>
+        <tbody id="pb-rows"></tbody></table></div>
+      <div class="muted" style="font-size:11px;padding:6px 12px">
+        ※行をクリックすると得点の内訳が出ます。反転（高値突破・出来高増の陽線）は必須条件ではなく、
+        起きていれば印を付けるだけです（反転前に見つけるためのランキングです）。
+      </div>
     </div>
   </div>
 
@@ -416,7 +450,7 @@ function injectStars(){
 new MutationObserver(()=>injectStars()).observe(document.body,{childList:true,subtree:true});
 
 // ===== タブ =====
-const TABS=['dashboard','stocks','gainers','rankings','heatmap','world','short','stest','watch'];
+const TABS=['dashboard','stocks','gainers','rankings','pullback','heatmap','world','short','stest','watch'];
 function currentTab(){ const h=location.hash.replace('#',''); return TABS.includes(h)?h:'dashboard'; }
 function showTab(t){
   TABS.forEach(x=>{
@@ -454,7 +488,7 @@ fetch('data.json').then(r=>r.json()).then(j=>{
                                     cap:p.cap,sr:p.sr,sec:p.sec}));
   dPrices.forEach(p=>{ META[p.code]={cap:p.cap, sr:p.sr}; });
   renderDash(); renderStocks(); renderGainers(); renderRankings(); renderShort();
-  renderWorld(); renderShortTest();
+  renderWorld(); renderShortTest(); renderPullback();
   showTab(currentTab());
 }).catch(e=>{ document.getElementById('updated').textContent='data.json 読込失敗'; });
 
@@ -747,6 +781,63 @@ document.addEventListener('click', e=>{
   b.classList.add('on');
   if(WCHART) WCHART.setDays(parseInt(b.dataset.d));
 });
+
+// ===== 上昇後・調整終了候補 =====
+function renderPullback(){
+  const P = D && D.pullback;
+  const body = document.getElementById('pb-rows');
+  if(!P || !P.rows){ if(body) body.innerHTML='<tr><td colspan="13" class="empty">データがありません</td></tr>'; return; }
+  document.getElementById('pb-note').textContent = `${P.rows.length}件（上昇 → 調整 → 売り物が減る → 値動きが収束の段階）`;
+  const p = v => v==null?'<span class="muted">-</span>'
+    : `<span class="${v>0?'rise':(v<0?'fall':'muted')}">${(v>=0?'+':'')+v.toFixed(1)}%</span>`;
+  body.innerHTML = P.rows.map(r=>`
+    <tr onclick="togglePbDetail('${r.code}')" style="cursor:pointer" title="クリックで得点の内訳">
+      <td class="txt-left code">${lk(r.code,r.code)}</td>
+      <td class="txt-left">${r.name||'-'}</td>
+      <td><b class="both" style="font-size:14px">${r.score}</b></td>
+      <td class="rise">+${r.rise.toFixed(1)}%</td>
+      <td class="fall">-${r.drop.toFixed(1)}%</td>
+      <td><b class="${r.vol_ratio!=null&&r.vol_ratio<0.35?'both':''}">${r.vol_ratio!=null?r.vol_ratio.toFixed(2):'-'}</b></td>
+      <td>${r.body!=null?r.body.toFixed(2):'-'}</td>
+      <td>${p(r.r3)}</td>
+      <td class="hide-sp muted">${Math.round(r.hi20).toLocaleString()}</td>
+      <td class="hide-sp muted">${Math.round(r.lo20).toLocaleString()}</td>
+      <td class="hide-sp muted">${r.days_since_low}日</td>
+      <td class="txt-left">${(r.flags||[]).length
+        ? r.flags.map(f=>`<span class="badge rise" style="margin-right:3px">${f}</span>`).join('')
+        : '<span class="muted" style="font-size:11px">まだ</span>'}</td>
+      <td class="hide-sp">${fmtCap(r.cap)}</td></tr>
+    <tr id="pbd-${r.code}" style="display:none;background:var(--bg3)">
+      <td colspan="13" class="txt-left" style="white-space:normal;padding:8px 12px">
+        <span class="muted" style="font-size:11px">得点の内訳（${r.score}点）：</span>
+        ${Object.entries(r.detail).map(([k,v])=>
+          `<span style="display:inline-block;margin:2px 8px 2px 0;font-size:12px">${P.labels[k]}
+            <b class="${v > P.weights[k]*0.7 ? 'both':'muted'}">${v}</b>
+            <span class="muted">/${P.weights[k]}</span></span>`).join('')}
+        <span class="muted" style="font-size:11px;margin-left:6px">調整${r.pullback_days}日目</span>
+      </td></tr>`).join('') || '<tr><td colspan="13" class="empty">該当なし</td></tr>';
+
+  const i = P.info;
+  document.getElementById('pb-how-body').innerHTML = `
+    <div style="font-size:12.5px;line-height:1.9;margin-bottom:10px">
+      ${i.text.map(t=>`<div>・${t}</div>`).join('')}</div>
+    <div class="table-wrap"><table>
+      <thead><tr><th class="txt-left">評価項目</th><th>配点</th><th class="txt-left">内容</th></tr></thead>
+      <tbody>${i.rows.map(r=>`<tr><td class="txt-left"><b>${r.name}</b></td>
+        <td><b class="both">${r.weight}点</b></td>
+        <td class="txt-left muted" style="white-space:normal">${r.desc}</td></tr>`).join('')}
+      </tbody></table></div>
+    <div class="muted" style="font-size:11px;line-height:1.8;margin-top:8px">
+      ${i.notes.map(t=>`<div>※${t}</div>`).join('')}</div>`;
+}
+function togglePbHow(){
+  const c=document.getElementById('pb-how');
+  c.style.display = c.style.display==='none' ? 'block' : 'none';
+}
+function togglePbDetail(code){
+  const r=document.getElementById('pbd-'+code);
+  if(r) r.style.display = r.style.display==='none' ? 'table-row' : 'none';
+}
 
 // ===== 空売り（テスト用） =====
 function renderShortTest(){

@@ -109,6 +109,22 @@ def _short_test_for_site():
             'version': m['version'], 'metrics': metrics, 'models': models}
 
 
+def _pullback_for_site():
+    """上昇後・調整終了候補（公開用）"""
+    try:
+        import pullback as pb
+    except Exception:
+        return None
+    rows = pb.ranking(limit=60, min_turnover_m=50.0)
+    funds = db.get_all_fundamentals()
+    for r in rows:
+        f = funds.get(r['code'])
+        r['cap'] = f.get('market_cap_oku') if f else None
+    d = pb.describe()
+    return {'rows': rows, 'info': d, 'weights': pb.WEIGHTS,
+            'labels': {k: v[0] for k, v in pb.LABEL.items()}}
+
+
 def cost_slice(c):
     """compute_cost_basis の結果を公開用に間引く"""
     return {'agg': c['agg'], 'rows': c['rows'][:15], 'close': c['close']}
@@ -189,6 +205,7 @@ def build():
         'flow_label': db.FLOW_LABEL,
         'world': _world_for_site(),
         'short_test': _short_test_for_site(),
+        'pullback': _pullback_for_site(),
     }
     with open(os.path.join(SITE, 'data.json'), 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
