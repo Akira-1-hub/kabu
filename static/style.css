@@ -19,6 +19,11 @@ nav a.tab { padding: 12px 14px; color: var(--muted); border-bottom: 2px solid tr
 nav a.tab:hover { color: var(--text); text-decoration: none; }
 nav a.tab.active { color: var(--accent2); border-bottom-color: var(--accent2); }
 nav .spacer { flex: 1; }
+/* スマホではタブを畳んでおく（☰で開閉）。画面が狭いとタブだけで数行を占めるため */
+.nav-toggle { display: none; background: var(--bg3); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px;
+  font-size: 13px; cursor: pointer; align-items: center; gap: 6px; }
+.nav-toggle .cur { color: var(--accent2); font-weight: 700; }
 nav .search { display: flex; align-items: center; gap: 6px; padding: 6px; }
 nav .search input { background: var(--bg); border: 1px solid var(--border); color: var(--text);
   border-radius: 6px; padding: 6px 10px; width: 140px; font-size: 13px; }
@@ -123,4 +128,16 @@ textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); 
   nav .search input { width: 100px; }
   .hide-sp { display: none; }
   .container { padding: 10px; }
+
+  /* ナビは既定で畳む。☰を押したときだけタブと検索を出す */
+  nav { padding: 0 8px 6px; }
+  nav .brand { padding: 10px 8px 10px 2px; font-size: 14px; }
+  .nav-toggle { display: inline-flex; margin-left: auto; }
+  nav.nav-collapsed a.tab,
+  nav.nav-collapsed .search { display: none; }
+  nav:not(.nav-collapsed) a.tab { flex: 1 1 auto; text-align: center;
+    padding: 9px 10px; border-bottom: none; border-radius: 6px;
+    background: var(--bg3); margin: 2px; }
+  nav:not(.nav-collapsed) a.tab.active { background: var(--accent); color: #fff; }
+  nav:not(.nav-collapsed) .search { flex: 1 1 100%; }
 }

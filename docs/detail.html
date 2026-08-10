@@ -46,6 +46,17 @@
   nav a.tab{padding:12px 14px;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap}
   nav a.tab:hover{color:var(--text);text-decoration:none}
   nav .spacer{flex:1}
+  .nav-toggle{display:none;background:var(--bg3);color:var(--text);border:1px solid var(--border);
+    border-radius:6px;padding:6px 12px;font-size:13px;cursor:pointer;align-items:center;gap:6px}
+  @media(max-width:700px){
+    nav{padding:0 8px 6px}
+    nav .brand{padding:10px 8px 10px 2px;font-size:14px}
+    .nav-toggle{display:inline-flex;margin-left:auto}
+    nav.nav-collapsed a.tab, nav.nav-collapsed .search{display:none}
+    nav:not(.nav-collapsed) a.tab{flex:1 1 auto;text-align:center;padding:9px 10px;
+      background:var(--bg3);border-radius:6px;margin:2px}
+    nav:not(.nav-collapsed) .search{flex:1 1 100%}
+  }
   nav .search{display:flex;align-items:center;gap:6px;padding:6px}
   nav .search input{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;width:130px;font-size:13px}
   .page-title{font-size:18px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -57,8 +68,9 @@
 </head>
 <body>
 
-<nav>
+<nav id="nav" class="nav-collapsed">
   <span class="brand">📈 投資DB <span class="muted" style="font-size:11px;font-weight:400">閲覧用</span></span>
+  <button class="nav-toggle" onclick="toggleNav()" aria-label="メニュー">☰ メニュー</button>
   <a class="tab" href="index.html#dashboard">ダッシュボード</a>
   <a class="tab" href="index.html#stocks">銘柄一覧</a>
   <a class="tab" href="index.html#gainers">上昇率</a>
@@ -214,6 +226,8 @@ const fmtP = n => n==null?'-':(n>=0?'+':'')+Number(n).toFixed(2)+'%';
 const cls  = n => n==null?'':(n>0?'rise':(n<0?'fall':''));
 
 document.getElementById('kabutan').href = `https://kabutan.jp/stock/?code=${code}`;
+
+function toggleNav(){ document.getElementById('nav').classList.toggle('nav-collapsed'); }
 
 // 検索（ナビ）
 function goStock(e){ e.preventDefault(); const c=document.getElementById('search-code').value.trim(); if(c) location.href='detail.html?code='+c; return false; }

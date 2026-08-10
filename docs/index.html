@@ -12,14 +12,19 @@
   .panel{display:none}
   .panel.on{display:block}
   nav .upd{font-size:11px;color:var(--muted);padding:0 8px;white-space:nowrap}
+  /* 畳んでいるときは更新日時も隠してナビを1行に収める */
+  @media(max-width:700px){ nav.nav-collapsed .upd{display:none} }
   td.code a{color:var(--muted);font-weight:600}
   .mat{white-space:normal;max-width:520px}
   .mat div{font-size:12px}
 </style>
 </head>
 <body>
-<nav>
+<nav id="nav" class="nav-collapsed">
   <span class="brand">📈 投資DB <span class="muted" style="font-size:11px;font-weight:400">閲覧用</span></span>
+  <button class="nav-toggle" onclick="toggleNav()" aria-label="メニュー">
+    ☰ <span class="cur" id="nav-cur"></span>
+  </button>
   <a class="tab" data-tab="dashboard" href="#dashboard">ダッシュボード</a>
   <a class="tab" data-tab="stocks" href="#stocks">銘柄一覧</a>
   <a class="tab" data-tab="gainers" href="#gainers">上昇率</a>
@@ -459,8 +464,14 @@ function showTab(t){
   });
   if(t==='watch') renderWatch();
   if(t==='heatmap') buildHeatmap();   // 非表示中は幅0なので、表示時に組み立てる
+  // スマホ：タブを選んだら畳んで、☰の横に今いるページ名を出す
+  const cur=document.querySelector('.tab[data-tab="'+t+'"]');
+  const lbl=document.getElementById('nav-cur');
+  if(lbl) lbl.textContent = cur ? cur.textContent.trim() : 'メニュー';
+  document.getElementById('nav').classList.add('nav-collapsed');
   window.scrollTo(0,0);
 }
+function toggleNav(){ document.getElementById('nav').classList.toggle('nav-collapsed'); }
 
 let HM=null;
 function buildHeatmap(){

@@ -8,8 +8,11 @@
 {% block head %}{% endblock %}
 </head>
 <body>
-<nav>
+<nav id="nav" class="nav-collapsed">
   <span class="brand">📈 投資DB</span>
+  <button class="nav-toggle" onclick="toggleNav()" aria-label="メニュー">
+    ☰ <span class="cur" id="nav-cur"></span>
+  </button>
   <a class="tab {% if request.path=='/' %}active{% endif %}" href="/">ダッシュボード</a>
   <a class="tab {% if request.path=='/stocks' %}active{% endif %}" href="/stocks">銘柄一覧</a>
   <a class="tab {% if request.path=='/gainers' %}active{% endif %}" href="/gainers">上昇率</a>
@@ -35,6 +38,14 @@
 </div>
 
 <script>
+// ===== スマホ用：ナビの開閉（既定は畳んだ状態。☰の横に今いるページ名を出す） =====
+function toggleNav(){ document.getElementById('nav').classList.toggle('nav-collapsed'); }
+(function(){
+  const cur = document.querySelector('nav a.tab.active');
+  const el = document.getElementById('nav-cur');
+  if (el) el.textContent = cur ? cur.textContent.trim() : 'メニュー';
+})();
+
 // ===== 上昇/下落の色 反転（--rise/--fall を入れ替え・端末ごとに記憶） =====
 (function(){
   const RISE='#ff6b6b', FALL='#4fc3f7';
