@@ -685,7 +685,12 @@ function renderShort(){
   if(!D||!D.short) return;
   const period=document.getElementById('sh-period').value;
   const S=D.short[period]||{};
-  document.getElementById('sh-range').textContent = S.from?`基準 ${S.from} → 最新 ${D.short.latest}`:'';
+  // 空売り残高は1〜2営業日遅れで公表されるので、今日の日付も並べて出す
+  const today = new Date().toLocaleDateString('sv-SE');   // YYYY-MM-DD
+  document.getElementById('sh-range').innerHTML = S.from
+    ? `基準 ${S.from} → 最新 ${D.short.latest}` +
+      `<span title="空売り残高は1〜2営業日遅れで公表されるため、最新＝今日ではありません"` +
+      ` style="margin-left:6px">（本日 ${today}）</span>` : '';
   const m=D.short.meta||{};
   document.getElementById('sh-info').textContent = m.n!=null?`累計${m.n.toLocaleString()}件 / ${m.codes}銘柄`:'';
 

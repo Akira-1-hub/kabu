@@ -448,6 +448,7 @@ def _short_common(base, weights=None):
     return dict(base=base, period=period, custom_from=custom_from,
                 custom_to=custom_to, rank=rank, new_short=new_short,
                 squeeze=squeeze, cover=cover, top_ratio=top_ratio,
+                today=datetime.now().strftime('%Y-%m-%d'),
                 info=db.short_data_range())
 
 

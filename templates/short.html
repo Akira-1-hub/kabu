@@ -17,6 +17,8 @@
   {{ '🎛 空売り残高ランキング（調整用）' if variant=='b' else '📉 空売り残高ランキング' }}
   <span class="muted" style="font-size:13px;font-weight:400">
     {% if rank.latest %}基準 {{ rank.from }} → 最新 {{ rank.latest }}{% endif %}
+    <span title="空売り残高は1〜2営業日遅れで公表されるため、最新＝今日ではありません"
+          style="margin-left:6px">（本日 {{ today }}）</span>
     {% if variant=='b' %}／ 重み <b style="color:var(--accent2)">{{ alt.version }}</b>{% endif %}
   </span>
 </div>
