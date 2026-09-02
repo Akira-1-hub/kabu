@@ -1,0 +1,655 @@
+/*
+ 自前ローソク足チャート（依存ライブラリなし・Canvas描画）
+ makeStockChart(priceEl, shortEl, bars, shorts)
+   bars  : [{time:'YYYY-MM-DD', open,high,low,close,volume}]  古い順
+   shorts: [{time:'YYYY-MM-DD', value}]  空売り残高合計%（古い順・繰り越し済み）
+ 株価と空売りは同じ表示インデックスを共有 → ズーム/パンが1対1で連動
+ 返り値: { setDays(n) }   n<=0で全期間
+*/
+function makeStockChart(priceEl, shortEl, bars, shorts, marks, lines) {
+  // 上昇/下落色は CSS変数(--rise/--fall)から取得 → 反転ボタンで入れ替え可能
+  function cssVar(name, fb) {
+    try { const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim(); return v || fb; }
+    catch (e) { return fb; }
+  }
+  function rgba(hex, al) {
+    const m = (hex || '').replace('#', '');
+    if (m.length < 6) return hex;
+    return `rgba(${parseInt(m.slice(0,2),16)},${parseInt(m.slice(2,4),16)},${parseInt(m.slice(4,6),16)},${al})`;
+  }
+  let UP = cssVar('--rise', '#ff6b6b'), DOWN = cssVar('--fall', '#4fc3f7');
+  const GRID = '#20203a', AXIS = '#8888aa', CROSS = '#9aa0c0';
+  const PADR = 56;                 // 右の価格軸ぶん
+  const hasShort = shorts && shorts.length > 0;
+  // {date: 'buy'|'neutral'|'sell'} か {date: {dir, net, ratio}}。
+  // 後者なら大口の積極売買の金額も吹き出しに出す
+  const MARKS = marks || {};
+  const markDir = v => (v && typeof v === 'object') ? v.dir : v;
+  const MARK_COLOR = { buy: '#2ecc71', neutral: '#95a5a6', sell: '#ff9f43' };
+  let LINES = lines || [];         // [{price, color, label}] 空売り/買戻し単価など
+
+  // 空売りを各バー日付に合わせて繰り越しアライン（同じ長さの配列に）
+  const shortAligned = [];
+  { let si = 0, cur = null;
+    for (const b of bars) {
+      while (si < shorts.length && shorts[si].time <= b.time) { cur = shorts[si].value; si++; }
+      shortAligned.push(cur);
+    }
+  }
+
+  // ---- Canvas生成 ----
+  function setup(el, h) {
+    el.style.position = 'relative';
+    el.innerHTML = '';
+    const cv = document.createElement('canvas');
+    cv.style.width = '100%'; cv.style.height = h + 'px'; cv.style.display = 'block';
+    cv.style.touchAction = 'none';
+    // 長押しで選択メニューやコールアウトが出ないようにする
+    cv.style.userSelect = 'none';
+    cv.style.webkitUserSelect = 'none';
+    cv.style.webkitTouchCallout = 'none';
+    cv.addEventListener('contextmenu', ev => ev.preventDefault());
+    el.appendChild(cv);
+    return cv;
+  }
+  const cP = setup(priceEl, 340);
+  const cS = hasShort ? setup(shortEl, 150) : null;
+
+  const tip = document.createElement('div');
+  tip.style.cssText = 'position:absolute;top:6px;left:6px;background:rgba(20,20,40,.85);' +
+    'border:1px solid #2a2a4a;border-radius:6px;padding:5px 8px;font-size:11px;' +
+    'color:#ddd;pointer-events:none;white-space:nowrap;z-index:5;display:none;line-height:1.5';
+  priceEl.appendChild(tip);
+
+  const N = bars.length;
+  let a = 0, b = N - 1;     // 表示インデックス範囲（両端含む）
+  let hover = null;          // クロスヘアのバーindex
+  let hoverPane = null;      // 'p' or 's'
+  let mouseY = 0;
+  let tipX = 8, tipY = 8;    // ツールチップ位置（priceEl基準・カーソル追従）
+
+  // タッチ端末にはマウスオーバーが無いので、操作方法を最初だけ案内する
+  let hintEl = null;
+  const canTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0 ||
+    (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  if (canTouch && !localStorage.getItem('kabu_chart_hint_done')) {
+    hintEl = document.createElement('div');
+    hintEl.textContent = '長押しで詳細 → そのまま左右に動かす';
+    hintEl.style.cssText = 'position:absolute;left:6px;bottom:6px;z-index:6;' +
+      'background:rgba(20,20,40,.85);border:1px solid #2a2a4a;border-radius:6px;' +
+      'padding:4px 9px;font-size:11px;color:#aab;pointer-events:none';
+    priceEl.appendChild(hintEl);
+  }
+  function hideHint() {
+    if (!hintEl) return;
+    hintEl.remove();
+    hintEl = null;
+    try { localStorage.setItem('kabu_chart_hint_done', '1'); } catch (e) {}
+  }
+
+  function dpr() { return window.devicePixelRatio || 1; }
+  function fit(cv) {
+    const r = cv.getBoundingClientRect();
+    const d = dpr();
+    cv.width = Math.max(1, Math.round(r.width * d));
+    cv.height = Math.max(1, Math.round(r.height * d));
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(d, 0, 0, d, 0, 0);
+    return { ctx, w: r.width, h: r.height };
+  }
+
+  function fmtDate(s, withY) {
+    const p = s.split('-');
+    return withY ? `${p[0].slice(2)}/${p[1]}/${p[2]}` : `${+p[1]}/${+p[2]}`;
+  }
+  function fmtVol(v) {
+    if (v >= 1e8) return (v / 1e8).toFixed(1) + '億';
+    if (v >= 1e4) return (v / 1e4).toFixed(0) + '万';
+    return String(v);
+  }
+
+  function xCenter(i, plotW) {
+    const n = b - a + 1;
+    return (i - a + 0.5) * (plotW / n);
+  }
+
+  // ---- 価格ペイン描画 ----
+  function drawPrice() {
+    const { ctx, w, h } = fit(cP);
+    ctx.clearRect(0, 0, w, h);
+    const plotW = w - PADR;
+    const padT = 8, padB = hasShort ? 6 : 20;
+    const volH = (h - padT - padB) * 0.20;
+    const priceH = (h - padT - padB) - volH;
+    const yTop = padT, yBot = padT + priceH;
+
+    // 表示範囲の高安
+    let lo = Infinity, hi = -Infinity, vMax = 0;
+    for (let i = a; i <= b; i++) {
+      lo = Math.min(lo, bars[i].low); hi = Math.max(hi, bars[i].high);
+      vMax = Math.max(vMax, bars[i].volume || 0);
+    }
+    for (const ln of LINES) { lo = Math.min(lo, ln.price); hi = Math.max(hi, ln.price); }
+    const pad = (hi - lo) * 0.06 || 1; lo -= pad; hi += pad;
+    const yP = p => yTop + (1 - (p - lo) / (hi - lo)) * priceH;
+
+    // グリッド＋価格ラベル（右）
+    ctx.font = '10px sans-serif'; ctx.textBaseline = 'middle';
+    ctx.strokeStyle = GRID; ctx.fillStyle = AXIS; ctx.lineWidth = 1;
+    const steps = 5;
+    for (let s = 0; s <= steps; s++) {
+      const p = lo + (hi - lo) * s / steps, y = yP(p);
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(plotW, y); ctx.stroke();
+      ctx.textAlign = 'left';
+      ctx.fillText(p.toFixed(p < 100 ? 1 : 0), plotW + 4, y);
+    }
+
+    const n = b - a + 1;
+    const bw = plotW / n;
+    const cw = Math.max(1, Math.min(bw * 0.7, 14));
+
+    // 出来高（下帯）
+    const vBase = h - padB, vTop = h - padB - volH;
+    for (let i = a; i <= b; i++) {
+      const x = xCenter(i, plotW), bar = bars[i];
+      const vh = vMax ? (bar.volume || 0) / vMax * volH : 0;
+      ctx.fillStyle = (bar.close >= bar.open) ? rgba(UP, .35) : rgba(DOWN, .35);
+      ctx.fillRect(x - cw / 2, vBase - vh, cw, vh);
+    }
+
+    // ローソク
+    for (let i = a; i <= b; i++) {
+      const bar = bars[i], x = xCenter(i, plotW);
+      const up = bar.close >= bar.open;
+      ctx.strokeStyle = up ? UP : DOWN; ctx.fillStyle = up ? UP : DOWN; ctx.lineWidth = 1;
+      // ヒゲ
+      ctx.beginPath(); ctx.moveTo(x, yP(bar.high)); ctx.lineTo(x, yP(bar.low)); ctx.stroke();
+      // 実体
+      const yo = yP(bar.open), yc = yP(bar.close);
+      const top = Math.min(yo, yc), bh = Math.max(1, Math.abs(yc - yo));
+      ctx.fillRect(x - cw / 2, top, cw, bh);
+    }
+
+    // 水平線（空売り単価/買戻し単価など）
+    ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+    for (const ln of LINES) {
+      const y = yP(ln.price);
+      ctx.strokeStyle = ln.color; ctx.setLineDash([5, 3]); ctx.lineWidth = 1.3;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(plotW, y); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = ln.color; ctx.textBaseline = 'bottom';
+      ctx.fillText(ln.label + ' ' + Math.round(ln.price), 4, y - 1);
+    }
+
+    // 大口の積極売買の印（買い越し=緑▲下 / 売り越し=橙▼上 / 拮抗=灰●）
+    for (let i = a; i <= b; i++) {
+      const tg = markDir(MARKS[bars[i].time]); if (!tg) continue;
+      const x = xCenter(i, plotW), col = MARK_COLOR[tg] || '#aaa';
+      ctx.fillStyle = col;
+      if (tg === 'buy') {
+        const y = yP(bars[i].low) + 10;
+        ctx.beginPath(); ctx.moveTo(x, y - 7); ctx.lineTo(x - 5, y); ctx.lineTo(x + 5, y); ctx.closePath(); ctx.fill();
+      } else if (tg === 'sell') {
+        const y = yP(bars[i].high) - 10;
+        ctx.beginPath(); ctx.moveTo(x, y + 7); ctx.lineTo(x - 5, y); ctx.lineTo(x + 5, y); ctx.closePath(); ctx.fill();
+      } else {
+        const y = yP(bars[i].high) - 10;
+        ctx.beginPath(); ctx.arc(x, y, 3.5, 0, 7); ctx.fill();
+      }
+    }
+
+    drawDateAxis(ctx, plotW, h, padB, !hasShort);
+    drawCross(ctx, plotW, h, padB, 'p', yP);
+  }
+
+  // ---- 空売りペイン描画 ----
+  function drawShort() {
+    if (!cS) return;
+    const { ctx, w, h } = fit(cS);
+    ctx.clearRect(0, 0, w, h);
+    const plotW = w - PADR;
+    const padT = 8, padB = 20;
+
+    let lo = Infinity, hi = -Infinity, any = false;
+    for (let i = a; i <= b; i++) {
+      const v = shortAligned[i]; if (v == null) continue;
+      any = true; lo = Math.min(lo, v); hi = Math.max(hi, v);
+    }
+    if (!any) { lo = 0; hi = 1; }
+    lo = Math.min(lo, hi - 0.5); hi += (hi - lo) * 0.1 || 0.5;
+    if (lo > 0) lo = Math.max(0, lo - (hi - lo) * 0.1);
+    const yV = v => padT + (1 - (v - lo) / (hi - lo)) * (h - padT - padB);
+
+    ctx.font = '10px sans-serif'; ctx.textBaseline = 'middle';
+    ctx.strokeStyle = GRID; ctx.fillStyle = AXIS; ctx.lineWidth = 1;
+    for (let s = 0; s <= 3; s++) {
+      const v = lo + (hi - lo) * s / 3, y = yV(v);
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(plotW, y); ctx.stroke();
+      ctx.textAlign = 'left'; ctx.fillText(v.toFixed(1) + '%', plotW + 4, y);
+    }
+
+    // エリア＋ライン
+    ctx.beginPath(); let started = false;
+    for (let i = a; i <= b; i++) {
+      const v = shortAligned[i]; if (v == null) continue;
+      const x = xCenter(i, plotW), y = yV(v);
+      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = UP; ctx.lineWidth = 1.5; ctx.stroke();
+
+    drawDateAxis(ctx, plotW, h, padB, true);
+    drawCross(ctx, plotW, h, padB, 's', yV);
+  }
+
+  function drawDateAxis(ctx, plotW, h, padB, withLabels) {
+    const n = b - a + 1;
+    const ticks = Math.min(8, n);
+    ctx.fillStyle = AXIS; ctx.strokeStyle = GRID; ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    let prevY = '';
+    for (let t = 0; t <= ticks; t++) {
+      const i = a + Math.round((n - 1) * t / ticks);
+      if (i < a || i > b) continue;
+      const x = xCenter(i, plotW);
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h - padB); ctx.strokeStyle = GRID; ctx.stroke();
+      if (withLabels) {
+        const y = bars[i].time.slice(0, 4);
+        ctx.fillText(fmtDate(bars[i].time, y !== prevY), x, h - padB + 4);
+        prevY = y;
+      }
+    }
+  }
+
+  function drawCross(ctx, plotW, h, padB, pane, yFn) {
+    if (hover == null || hover < a || hover > b) return;
+    const x = xCenter(hover, plotW);
+    ctx.save();
+    ctx.strokeStyle = CROSS; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h - padB); ctx.stroke();
+    if (pane === hoverPane) {
+      ctx.beginPath(); ctx.moveTo(0, mouseY); ctx.lineTo(plotW, mouseY); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function draw() { drawPrice(); drawShort(); updateTip(); }
+
+  // 大口の積極売買（超大口＋大口の 買い−売り）。その日のぶんがあれば出す
+  function flowLine(date) {
+    const f = MARKS[date];
+    if (!f || typeof f !== 'object' || f.net == null) return '';
+    const c = f.net > 0 ? UP : (f.net < 0 ? DOWN : AXIS);
+    const amt = (f.net >= 0 ? '+' : '') + (f.net / 1e8).toFixed(2) + '億';
+    const rt = f.ratio == null ? '' :
+      ` (代金比 ${(f.ratio >= 0 ? '+' : '') + f.ratio.toFixed(1)}%)`;
+    return `<br>大口積極 <b style="color:${c}">${amt}</b>${rt}`;
+  }
+
+  function updateTip() {
+    if (hover == null || hover < 0 || hover >= N) { tip.style.display = 'none'; return; }
+    const d = bars[hover], sv = shortAligned[hover];
+    const up = d.close >= d.open;
+    // 指数のように小数が多い値でも読めるよう、小数2桁までに丸めて桁区切りを付ける
+    const px = v => v == null ? '-' :
+      (Math.round(v * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    tip.innerHTML =
+      `<b>${fmtDate(d.time, true)}</b><br>` +
+      `始${px(d.open)} 高${px(d.high)} 安${px(d.low)} ` +
+      `<b style="color:${up ? UP : DOWN}">終${px(d.close)}</b><br>` +
+      `出来高 ${fmtVol(d.volume || 0)}` +
+      (sv != null ? ` ／ 空売り <b style="color:${UP}">${sv.toFixed(2)}%</b>` : '') +
+      flowLine(d.time);
+    tip.style.display = 'block';
+    // カーソルの右上に「棚」表示（はみ出す側は反転）
+    const pw = cP.clientWidth, ph = cP.clientHeight;
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    let lx = tipX + 14, ty = tipY - th - 12;      // 既定＝右上
+    if (lx + tw > pw - 4) lx = tipX - tw - 14;     // 右が切れるなら左へ
+    if (lx < 2) lx = 2;
+    if (ty < 2) ty = tipY + 14;                    // 上が切れるなら下へ
+    if (ty + th > ph - 2) ty = ph - th - 2;        // 下も切れるなら底に寄せる
+    tip.style.left = lx + 'px'; tip.style.top = ty + 'px';
+  }
+
+  // ---- 操作（ズーム/パン/クロスヘア・両ペイン共通） ----
+  function idxAtX(cv, clientX) {
+    const r = cv.getBoundingClientRect();
+    const plotW = r.width - PADR;
+    const mx = clientX - r.left;
+    const n = b - a + 1;
+    return { idx: Math.round(a + (mx / plotW) * n - 0.5), mx, plotW };
+  }
+
+  function zoomAt(clientX, cv, factor) {
+    const { mx, plotW } = idxAtX(cv, clientX);
+    const n = b - a + 1;
+    let ns = Math.round(n * factor);
+    ns = Math.max(10, Math.min(N, ns));
+    const frac = mx / plotW;
+    const anchor = a + frac * n;
+    let na = Math.round(anchor - frac * ns);
+    na = Math.max(0, Math.min(N - ns, na));
+    a = na; b = na + ns - 1; draw();
+  }
+
+  let drag = null;
+  function bind(cv, pane) {
+    cv.addEventListener('wheel', e => {
+      e.preventDefault();
+      zoomAt(e.clientX, cv, e.deltaY > 0 ? 1.15 : 1 / 1.15);
+    }, { passive: false });
+
+    cv.addEventListener('mousedown', e => {
+      drag = { x: e.clientX, a, b, cv, moved: false };
+    });
+    window.addEventListener('mousemove', e => {
+      if (drag) {
+        const r = drag.cv.getBoundingClientRect();
+        const plotW = r.width - PADR, n = drag.b - drag.a + 1;
+        const dBars = Math.round((e.clientX - drag.x) / (plotW / n));
+        if (dBars !== 0) drag.moved = true;
+        let na = drag.a - dBars;
+        na = Math.max(0, Math.min(N - n, na));
+        a = na; b = na + n - 1; draw();
+      }
+    });
+    window.addEventListener('mouseup', () => { drag = null; });
+
+    cv.addEventListener('mousemove', e => {
+      const r = cv.getBoundingClientRect();
+      const { idx } = idxAtX(cv, e.clientX);
+      hover = Math.max(a, Math.min(b, idx));
+      hoverPane = pane; mouseY = e.clientY - r.top;
+      // ツールチップをカーソル位置へ（tipはpriceEl内なのでcP基準に換算）
+      const pr = cP.getBoundingClientRect();
+      tipX = e.clientX - pr.left;
+      tipY = (pane === 'p') ? (e.clientY - pr.top) : 8;
+      draw();
+    });
+    cv.addEventListener('mouseleave', () => { hover = null; hoverPane = null; draw(); });
+
+    // タッチ（パン＋ピンチ＋長押しで詳細表示）
+    let tStart = null, pressTimer = null;
+    const PRESS_MS = 350;     // これだけ押し続けたら詳細表示に切り替える
+    const MOVE_TOL = 12;      // それまでにこれ以上動いたら通常のパン扱い
+
+    // 2本指の距離（縦・斜めのピンチでも正しく測れるよう2次元で）
+    const touchDist = t => Math.hypot(t[0].clientX - t[1].clientX,
+                                      t[0].clientY - t[1].clientY) || 1;
+
+    // 指の位置に十字線とツールチップを合わせる
+    function scrubTo(touch, pane) {
+      const r = cv.getBoundingClientRect();
+      const { idx } = idxAtX(cv, touch.clientX);
+      hover = Math.max(a, Math.min(b, idx));
+      hoverPane = pane;
+      mouseY = touch.clientY - r.top;
+      const pr = cP.getBoundingClientRect();
+      tipX = touch.clientX - pr.left;
+      tipY = (pane === 'p') ? (touch.clientY - pr.top) : 8;
+      draw();
+    }
+    const clearPress = () => { clearTimeout(pressTimer); pressTimer = null; };
+
+    cv.addEventListener('touchstart', e => {
+      clearPress();
+      if (e.touches.length === 1) {
+        const t = e.touches[0];
+        tStart = { mode: 'pan', x: t.clientX, y: t.clientY, a, b };
+        // 長押し判定：動かさずに押し続けたら「詳細表示（スクラブ）」に切り替え
+        pressTimer = setTimeout(() => {
+          if (!tStart) return;
+          tStart.mode = 'scrub';
+          if (navigator.vibrate) { try { navigator.vibrate(15); } catch (_) {} }
+          scrubTo(t, pane);
+          hideHint();
+        }, PRESS_MS);
+      } else if (e.touches.length === 2) {
+        // 開始時の距離と表示範囲を保持し、以降は「開始比」で絶対的に拡大縮小する
+        tStart = { mode: 'pinch', d0: touchDist(e.touches), a0: a, b0: b,
+                   cx: (e.touches[0].clientX + e.touches[1].clientX) / 2 };
+      }
+    }, { passive: false });
+
+    cv.addEventListener('touchmove', e => {
+      if (!tStart) return;
+      e.preventDefault();
+      if (tStart.mode === 'scrub' && e.touches.length === 1) {
+        // 長押し後：左右にスライドで十字線を移動（チャートは動かさない）
+        scrubTo(e.touches[0], pane);
+        return;
+      }
+      if (tStart.mode === 'pan' && e.touches.length === 1) {
+        const t = e.touches[0];
+        // 長押し成立前に動いたらパン確定（タイマーを止める）
+        if (pressTimer && (Math.abs(t.clientX - tStart.x) > MOVE_TOL ||
+                           Math.abs(t.clientY - tStart.y) > MOVE_TOL)) clearPress();
+        const r = cv.getBoundingClientRect(), plotW = r.width - PADR, n = tStart.b - tStart.a + 1;
+        const dBars = Math.round((t.clientX - tStart.x) / (plotW / n));
+        let na = tStart.a - dBars; na = Math.max(0, Math.min(N - n, na));
+        a = na; b = na + n - 1; draw();
+      } else if (tStart.mode === 'pinch' && e.touches.length === 2) {
+        // 指を広げる(d↑) → 開始比<1 → 表示本数が減る＝拡大（一般的な操作と同じ向き）
+        a = tStart.a0; b = tStart.b0;
+        zoomAt(tStart.cx, cv, tStart.d0 / touchDist(e.touches));
+      }
+    }, { passive: false });
+
+    cv.addEventListener('touchend', () => {
+      clearPress();
+      // スクラブで表示した内容は指を離しても読めるように残す
+      tStart = null;
+    });
+    cv.addEventListener('touchcancel', () => { clearPress(); tStart = null; });
+  }
+  bind(cP, 'p');
+  if (cS) bind(cS, 's');
+
+  let rsto;
+  window.addEventListener('resize', () => { clearTimeout(rsto); rsto = setTimeout(draw, 120); });
+
+  function setDays(days) {
+    if (days <= 0 || days >= N) { a = 0; b = N - 1; }
+    else { b = N - 1; a = Math.max(0, N - days); }
+    draw();
+  }
+
+  function setLines(arr) { LINES = arr || []; draw(); }
+  function refreshColors() { UP = cssVar('--rise', '#ff6b6b'); DOWN = cssVar('--fall', '#4fc3f7'); draw(); }
+
+  draw();
+  return { setDays, setLines, refreshColors };
+}
+
+// ============================================================
+// 空売り残高報告テーブル（karauri.net風・ツール/公開版で共通）
+// rows: [{d:計算日, i:空売り者, r:残高割合%, cr:増減率, s:残高数量, cs:増減量, n:備考}]
+// container(div)内に table を生成。列ヘッダクリックでソート。
+// ============================================================
+// 空売り残高報告テーブルのスタイル（ツール/公開版で共通・1回だけ注入）
+function _srStyle() {
+  if (document.getElementById('sr-style')) return;
+  const el = document.createElement('style');
+  el.id = 'sr-style';
+  el.textContent = `
+.sr-tools{display:flex;gap:6px;align-items:center;padding:6px 8px;position:sticky;top:0;z-index:3;
+  background:var(--bg2);border-bottom:1px solid var(--border)}
+.sr-tools .sr-mode{background:var(--bg3);color:var(--muted);border:1px solid var(--border);
+  border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer}
+.sr-tools .sr-mode.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.sr-tools .sr-sort{margin-left:auto;background:var(--bg);color:var(--text);
+  border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px}
+.sr-ym{position:sticky;top:33px;z-index:2;background:var(--bg3);color:var(--muted);
+  font-size:11px;font-weight:700;padding:3px 10px;border-bottom:1px solid var(--border)}
+.sr-card{display:flex;gap:10px;align-items:center;padding:7px 10px;
+  border-bottom:1px solid var(--border)}
+.sr-card:hover{background:var(--bg3)}
+.sr-left{flex:1 1 auto;min-width:0}
+.sr-l1{display:flex;gap:6px;align-items:baseline;font-size:13px}
+.sr-day{color:var(--muted);font-size:11px;flex:0 0 auto}
+.sr-inst{color:var(--text);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sr-l2{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;margin-top:2px}
+.sr-right{flex:0 0 40%;max-width:190px;text-align:right}
+.sr-bar{height:14px;background:var(--bg3);border-radius:3px;overflow:hidden}
+.sr-bar span{display:block;height:100%}
+.sr-sh{font-size:11px;color:var(--text);margin-top:2px;white-space:nowrap}
+@media(max-width:520px){.sr-right{flex-basis:34%}.sr-inst{font-size:12px}}
+`;
+  document.head.appendChild(el);
+}
+
+function makeShortReportTable(container, rows) {
+  if (!container) return;
+  _srStyle();
+  rows = rows || [];
+  if (!rows.length) {
+    container.innerHTML = '<div class="empty">空売り残高の報告はありません（残高0.5%未満）</div>';
+    return;
+  }
+  const COLS = [
+    { k: 'd',  label: '計算日',   left: true },
+    { k: 'i',  label: '空売り者', left: true },
+    { k: 'r',  label: '残高割合' },
+    { k: 'cr', label: '増減率' },
+    { k: 's',  label: '残高数量' },
+    { k: 'cs', label: '増減量' },
+    { k: 'n',  label: '備考',     left: true },
+  ];
+  let sortK = null, sortAsc = false;   // null = 既定（日付降順）
+  const base = rows.slice();
+
+  const pf = v => v > 0 ? 'rise' : (v < 0 ? 'fall' : 'muted');
+  const fmtPct = v => v == null ? '0%' : ((v > 0 ? '+' : '') + Number(v).toFixed(3) + '%');
+  const fmtChg = v => v == null ? '' : ((v > 0 ? '+' : '') + Math.round(v).toLocaleString());
+  const noteHtml = n => {
+    if (!n) return '';
+    if (n === '報告義務消失')
+      return '<span style="background:rgba(255,107,107,.16);color:#ff9f9f;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:700;white-space:nowrap">報告義務消失</span>';
+    if (n === '新規')
+      return '<span style="background:rgba(0,188,212,.14);color:#5fd6e8;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:700">新規</span>';
+    return '<span class="muted" style="white-space:nowrap">' + n + '</span>';
+  };
+
+  function sorted() {
+    if (!sortK) return base;
+    const arr = base.slice();
+    const nul = sortAsc ? Infinity : -Infinity;
+    arr.sort((a, b) => {
+      let x = a[sortK], y = b[sortK];
+      if (typeof x === 'string' || typeof y === 'string') {
+        x = x == null ? '' : String(x);
+        y = y == null ? '' : String(y);
+        return sortAsc ? x.localeCompare(y, 'ja') : y.localeCompare(x, 'ja');
+      }
+      x = x == null ? nul : x;
+      y = y == null ? nul : y;
+      return sortAsc ? x - y : y - x;
+    });
+    return arr;
+  }
+
+  // 表示モード: 'table'=表 / 'card'=karauri.net風（スマホで横スクロール不要）
+  const MKEY = 'kabu_sr_mode';
+  let mode = localStorage.getItem(MKEY);
+  if (mode !== 'table' && mode !== 'card') {
+    mode = (window.innerWidth || 1200) < 760 ? 'card' : 'table';  // 狭い画面は既定でカード
+  }
+  const maxR = Math.max(...base.map(r => Number(r.r) || 0), 0.001);
+
+  // ---- 表モード ----
+  function tableHtml() {
+    const arrow = c => c.k !== sortK
+      ? ' <span style="opacity:.35">⇕</span>'
+      : (sortAsc ? ' <span style="color:var(--accent2)">▲</span>' : ' <span style="color:var(--accent2)">▼</span>');
+    const thead = '<tr>' + COLS.map((c, ci) =>
+      '<th data-ci="' + ci + '" style="cursor:pointer;user-select:none' + (c.left ? ';text-align:left' : '') + '">' +
+      c.label + arrow(c) + '</th>').join('') + '</tr>';
+    const body = sorted().map(r => '<tr>' +
+      '<td style="text-align:left" class="muted">' + r.d + '</td>' +
+      '<td style="text-align:left;white-space:nowrap">' + r.i + '</td>' +
+      '<td><b>' + (r.r == null ? '-' : Number(r.r).toFixed(3) + '%') + '</b></td>' +
+      '<td class="' + (r.cr == null ? 'muted' : pf(r.cr)) + '">' + fmtPct(r.cr) + '</td>' +
+      '<td>' + (r.s == null ? '-' : Math.round(r.s).toLocaleString() + '株') + '</td>' +
+      '<td class="' + (r.cs == null ? '' : pf(r.cs)) + '">' + fmtChg(r.cs) + '</td>' +
+      '<td style="text-align:left">' + noteHtml(r.n) + '</td>' +
+      '</tr>').join('');
+    return '<table><thead>' + thead + '</thead><tbody>' + body + '</tbody></table>';
+  }
+
+  // ---- カードモード（karauri.net風・横スクロールなし） ----
+  function cardHtml() {
+    const UP = 'var(--rise)', DOWN = 'var(--fall)';
+    let prevYm = '';
+    return '<div class="sr-cards">' + sorted().map(r => {
+      const up = (r.cs || 0) > 0, down = (r.cs || 0) < 0;
+      const barCol = up ? UP : (down ? DOWN : '#8888aa');
+      const w = Math.max(2, Math.min(100, (Number(r.r) || 0) / maxR * 100));
+      const chgPctHtml = r.cr == null ? ''
+        : '<span class="' + pf(r.cr) + '" style="font-weight:700">' + fmtPct(r.cr) + '</span>';
+      const chgShHtml = r.cs == null || r.cs === 0 ? ''
+        : '<span class="' + pf(r.cs) + '">' + fmtChg(r.cs) + '</span>';
+      // 年月が変わったら見出しを挟む（karauri.net の日付ヘッダ相当）
+      const ym = (r.d || '').slice(0, 7);
+      let head = '';
+      if (ym && ym !== prevYm) {
+        prevYm = ym;
+        head = '<div class="sr-ym">' + ym.replace('-', '年') + '月</div>';
+      }
+      const day = (r.d || '').slice(8) || '';
+      return head +
+        '<div class="sr-card">' +
+          '<div class="sr-left">' +
+            '<div class="sr-l1"><span class="sr-day">' + day + '日</span>' +
+              '<span class="sr-inst">' + r.i + '</span></div>' +
+            '<div class="sr-l2"><b>' + (r.r == null ? '-' : Number(r.r).toFixed(3) + '%') + '</b>' +
+              chgPctHtml + chgShHtml + noteHtml(r.n) + '</div>' +
+          '</div>' +
+          '<div class="sr-right">' +
+            '<div class="sr-bar"><span style="width:' + w + '%;background:' + barCol + '"></span></div>' +
+            '<div class="sr-sh">' + (r.s == null ? '-' : Math.round(r.s).toLocaleString() + '株') + '</div>' +
+          '</div>' +
+        '</div>';
+    }).join('') + '</div>';
+  }
+
+  function toolbarHtml() {
+    const b = (m, label) => '<button class="sr-mode' + (mode === m ? ' on' : '') +
+      '" data-m="' + m + '">' + label + '</button>';
+    let sortSel = '';
+    if (mode === 'card') {
+      sortSel = '<select class="sr-sort">' + COLS.map(c =>
+        '<option value="' + c.k + '"' + (c.k === (sortK || 'd') ? ' selected' : '') + '>' +
+        c.label + '順</option>').join('') + '</select>';
+    }
+    return '<div class="sr-tools">' + b('table', '表') + b('card', 'カード') +
+           sortSel + '</div>';
+  }
+
+  function render() {
+    container.innerHTML = toolbarHtml() +
+      '<div class="sr-body">' + (mode === 'card' ? cardHtml() : tableHtml()) + '</div>';
+    container.querySelectorAll('.sr-mode').forEach(btn => {
+      btn.onclick = () => {
+        mode = btn.dataset.m;
+        localStorage.setItem(MKEY, mode);
+        render();
+        container.scrollTop = 0;
+      };
+    });
+    const sel = container.querySelector('.sr-sort');
+    if (sel) sel.onchange = () => {
+      const k = sel.value;
+      sortK = (k === 'd') ? null : k;
+      sortAsc = false;
+      render();
+    };
+    container.querySelectorAll('th').forEach(th => {
+      th.onclick = () => {
+        const c = COLS[+th.dataset.ci];
+        if (sortK === c.k) { sortAsc = !sortAsc; }
+        else { sortK = c.k; sortAsc = (c.k === 'i' || c.k === 'n'); }
+        render();
+      };
+    });
+  }
+  render();
+}
